@@ -1,0 +1,23 @@
+{
+    "_": "Edit this file to configure translate.py.  Restart the script for changes to take effect.",
+
+    "target_lang": "Chinese",
+    "target_lang_code": "CN",
+    "source_lang": "English",
+
+    "add_punctuation": true,
+    "allow_flexible_word_order": false,
+    "allow_simplify_wording": false,
+    "number_mode": "auto",
+    "space_between_cjk_and_latin": false,
+
+    "glossary": [
+    ],
+    "custom_system_prompt": null,
+    "cache_prompt": false,
+    "batch_size": 8,
+
+    "openai_api_key": "",
+    "anthropic_api_key": "",
+    "api_base_url": ""
+}

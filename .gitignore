@@ -1,0 +1,38 @@
+# ── Secrets & environment ───────────────────────────────────────
+.env
+.env.local
+.venv
+# ── Python ──────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+*.whl
+.pytest_cache/
+*.egg
+
+# ── Large binary files (not source) ────────────────────────────
+models/
+tools/llama
+
+# ── Generated output & cache ────────────────────────────────────
+output/
+cache/
+input/
+
+# ── IDE ─────────────────────────────────────────────────────────
+.idea/
+*.swp
+*.swo
+*~
+
+# ── Claude Code ────────────────────────────────────────────────
+.claude/
+
+# ── System junk ─────────────────────────────────────────────────
+--local-dir
+--local-dir/
+Thumbs.db
+.DS_Store
+Desktop.ini

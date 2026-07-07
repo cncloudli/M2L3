@@ -1,0 +1,4 @@
+requests==2.34.2
+torch==2.8.0+cu128
+torchaudio==2.8.0+cu128
+whisperx==3.8.6
