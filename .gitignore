@@ -14,12 +14,18 @@ build/
 
 # ── Large binary files (not source) ────────────────────────────
 models/
+!models/.gitkeep
 tools/llama
+!tools/llama/.gitkeep
 
-# ── Generated output & cache ────────────────────────────────────
-output/
-cache/
+# ── Input, generated output & cache ────────────────────────────────────
 input/
+!input/.gitkeep
+output/
+!output/.gitkeep
+cache/
+!cache/.gitkeep
+
 
 # ── IDE ─────────────────────────────────────────────────────────
 .idea/
