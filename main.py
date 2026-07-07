@@ -9,13 +9,16 @@ Pipeline:
   5. Export to SRT + TXT
 """
 
-import os, sys, subprocess
+import os, sys, subprocess, warnings
 from pathlib import Path
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Proxy / GPU environment — must run before any model download
 # ══════════════════════════════════════════════════════════════════════════════
 import tools.config  # noqa: F401  (sets HTTP_PROXY, NO_PROXY, CUDA_VISIBLE_DEVICES)
+
+# Suppress spurious torchcodec warning from pyannote.audio (fallback to FFmpeg is fine)
+warnings.filterwarnings("ignore", category=UserWarning, module="pyannote")
 
 import whisperx
 import torch  # noqa: E402  (needed for hub monkey-patch below)
@@ -202,7 +205,7 @@ from tools.format import format_srt_time  # noqa: F401  (used by debug scripts)
 
 def _print_banner():
     print("=" * 55)
-    print("  M2L3 - Subtitle Generation Pipeline")
+    print("Eng V/A Transcription & Mlt-Ly LLM-Based Sub Seg Pipeline")
     print("=" * 55)
 
 

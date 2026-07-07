@@ -9,7 +9,7 @@ Local, GPU-accelerated subtitle generation with WhisperX + Wav2Vec2 alignment + 
 | **Segment** | Phi-4 via llama-server (10-phase LLM refinement)  | All content types |
 | **Translate** | Phi-4 via llama-server or Online LLM (API needed) | Post-transcription EN → any language |
 
-All processing runs **fully offline** — no data leaves your machine.
+All processing runs **fully offline** — no data leaves your machine. (Online LLM Translation is **Optional**)
 
 ---
 
@@ -41,6 +41,17 @@ All processing runs **fully offline** — no data leaves your machine.
 | [tools/llm_pipeline.py](tools/llm_pipeline.py) | **LLM segmentation engine.** `LLMPipeline` class — manages llama-server subprocess lifecycle and runs the 10-phase segmentation algorithm (see [docs/segmentation_pipeline.md](docs/segmentation_pipeline.md) for full algorithm chart). `segment_with_llm()` convenience function for one-shot CLI use. |
 | [tools/non_split_bigrams.py](tools/non_split_bigrams.py) | **Phrase protection.** `NON_SPLIT_BIGRAMS` set (~5700 entries) of fixed expressions, phrasal verbs, and collocations that must not be split across subtitle segments. `would_break_phrase()` look-up used by all segmentation phases. |
 | [tools/llama/](tools/llama/) | **llama.cpp binaries.** Pre-compiled `llama-server.exe` + CUDA 12 DLLs for local LLM inference. Excluded from git — see [Setup → llama.cpp Binary](#llamacpp-binary). |
+
+### `docs/` directory
+
+| File | Purpose                                                                                                                                                                                                              |
+|------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| [docs/segmentation_pipeline.md](docs/segmentation_pipeline.md) | **10-phase LLM segmentation algorithm doc.** Full algorithm flow chart and detailed description of all 10 phases, guard mechanisms, and LLM call summary (English).                                                  |
+| [docs/segmentation_pipeline_CN.md](docs/segmentation_pipeline_CN.md) | **10-phase LLM segmentation algorithm doc.** Same content as above in Chinese (中文).                                                                                                                                  |
+| [docs/transcription_n_translation.md](docs/transcription_n_translation.md) | **Transcription & translation technical implementation.** Design rationale, parameter choices, and code walkthrough for the ASR-to-alignment-to-segmentation pipeline and the translation factory backend (English). |
+| [docs/transcription_n_translation_CN.md](docs/transcription_n_translation_CN.md) | **Transcription & translation technical implementation.** Same content as above in Chinese (中文).                                                                                                                     |
+| [docs/models_n_hardware_reqs.md](docs/models_n_hardware_reqs.md) | **Models & hardware requirements.** (TODO — will cover LLM models used, VRAM/RAM/disk requirements, and performance guidance.)                                                                                       |
+| [docs/models_n_hardware_reqs_CN.md](docs/models_n_hardware_reqs_CN.md) | **Models & hardware requirements.** (TODO — same content as above in Chinese.)                                                                                                                                       |
 
 ---
 
@@ -93,7 +104,8 @@ pip install -r requirements.txt
 2. Download the zip for your setup
 3. Extract **all files** into `tools/llama/`
 
-`llama-server.exe` (9 KB) is the main inference server. The accompanying DLLs are required at runtime; the other .exe tools are optional.
+
+> **Note**: The release page also lists a **"CUDA 12.4 DLLs"** package (`cudart-llama-bin-win-cuda-12.4-x64.zip`, ~750 MB). This is an optional supplement — it provides NVIDIA's official cuBLAS libraries which can give slightly better GPU performance than `ggml-cuda.dll`'s built-in implementation. You don't need it; the standard CUDA build works fine on its own. If you do download it, extract the 3 DLLs into the same `tools/llama/` folder.
 
 
 ### Models
@@ -220,6 +232,9 @@ Input video
 # Default
 python main.py -i input/input.mp4
 
+# If the path includes spaces or special characters, please put it in quotes 
+python main.py -i input/"input.mp4"
+
 # Custom output path
 python main.py -i input/input.mp4 -o D:/output/lecture.srt
 
@@ -327,7 +342,7 @@ Edit [translate_config.json](translate_config.json) in the project root, or use 
     "target_lang": "Chinese",
     "target_lang_code": "CN",
     "source_lang": "English",
-    "add_punctuation": true,
+    "add_punctuation": false,
     "allow_flexible_word_order": false,
     "allow_simplify_wording": false,
     "number_mode": "auto",
@@ -373,7 +388,8 @@ Edit [translate_config.json](translate_config.json) in the project root, or use 
 
 ```powershell
 # Local Phi-4 — Translate TXT to Chinese (default)
-python translate.py -i output/input.txt
+python translate.py -i output/input.txt 
+python translate.py -i output/"input.txt"
 # → output/input_CN.txt
 
 # Local Phi-4 — Translate SRT (preserves timecodes)
@@ -441,8 +457,12 @@ M2L3/
 │   ├── faster-whisper-large-v3/    # ASR model (~3 GB)
 │   └── phi-4-Q4_K_M.gguf           # LLM for segmentation & translation (~8.5 GB, Phi-4 14B)
 ├── docs/
-│   ├── segmentation_pipeline.md    # 10-phase LLM segmentation algorithm chart (English)
-│   └── segmentation_pipeline_CN.md # 10 阶段 LLM 分割算法流程图（中文）
+│   ├── segmentation_pipeline.md           # 10-phase LLM segmentation algorithm (English)
+│   ├── segmentation_pipeline_CN.md        # 10 阶段 LLM 分割算法文档（中文）
+│   ├── transcription_n_translation.md     # Transcription & translation technical implementation (English)
+│   ├── transcription_n_translation_CN.md  # 转录与翻译技术实现文档（中文）
+│   ├── models_n_hardware_reqs.md          # (TODO) Models & hardware requirements
+│   └── models_n_hardware_reqs_CN.md       # (TODO) 模型与硬件需求说明
 ├── tools/
 │   ├── llama/
 │   │   └── llama-server.exe        # llama.cpp inference server (CUDA)

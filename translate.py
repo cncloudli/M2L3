@@ -77,7 +77,7 @@ def _load_config():
         "target_lang": "Chinese",
         "target_lang_code": "CN",
         "source_lang": "English",
-        "add_punctuation": True,
+        "add_punctuation": False,
         "allow_flexible_word_order": False,
         "allow_simplify_wording": False,
         "number_mode": "auto",

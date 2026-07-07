@@ -94,7 +94,7 @@ ASR 单词列表（带时间戳）
 | **输入** | 单词列表（`words`：每个词有 `{text, start, end}`） |
 | **算法** | 遍历单词；遇到以 `.`/`?`/`!` 结尾的词即切分一个组（`(start_idx, end_idx)` 范围） |
 | **输出** | `groups`：单词索引范围列表，每组以原生 .?! 结尾 |
-| **函数** | `_build_groups()` (line 1009) |
+| **函数** | [`_build_groups()`](../tools/llm_pipeline.py) |
 | **边界情况** | 无标点的组被整体保留为一个组 |
 
 ```
@@ -138,7 +138,7 @@ ASR 单词列表（带时间戳）
 | **输入** | `blocks`，`words`，短组（作为只读上下文） |
 | **子步骤** | ① 为每个块寻找最近的短组作为上下文（左/右）<br>② 调用 `_llm()` 发送到 Phi-4，请求添加缺失逗号和句末标点<br>③ `_find_new_breaks()`：对原始文本和 LLM 输出做字符级 diff，识别新增的 .?!<br>④ `_find_new_commas()`：同样 diff 找出新增的逗号<br>⑤ **保护过滤**：拒绝在脆弱尾词（FRAGILE_RE）、短语二元组、加强词 so 前的断点<br>⑥ 将新增逗号注入回单词数据 |
 | **输出** | `all_breaks`（原生 + 新增断点的全局单词索引集合） |
-| **函数** | `_llm()` (line 749)，`_find_new_breaks()` (line 1075)，`_find_new_commas()` (line 1131)，`_find_context()` (line 1029) |
+| **函数** | [`_llm()`](../tools/llm_pipeline.py)，[`_find_new_breaks()`](../tools/llm_pipeline.py)，[`_find_new_commas()`](../tools/llm_pipeline.py)，[`_find_context()`](../tools/llm_pipeline.py) |
 
 ```
 LLM 提示词（默认版）：
@@ -162,7 +162,7 @@ LLM 提示词（默认版）：
 | **输入** | `all_breaks`（阶段 4 输出的所有 .?! 断点 + 原生断点），`words` |
 | **算法** | 排序所有断点 → 在每个断点处切分 → 构建 `{text, start, end}` 段字典 |
 | **输出** | `segments_with_idx`：`(word_start, word_end, segment_dict)` 列表 |
-| **函数** | 内联于 `segment()` (line 1382) |
+| **函数** | 内联于 [`segment()`](../tools/llm_pipeline.py) |
 
 ### 阶段 6：逗号强制分割
 
@@ -172,7 +172,7 @@ LLM 提示词（默认版）：
 | **输入** | `segments_with_idx`（来自阶段 5），`words`，`min_words`（默认 4） |
 | **算法** | 从右到左扫描，找符合条件的逗号：<br>• 逗号两侧各 ≥ `min_words` 个词<br>• 逗号后首词是 `CLAUSE_STARTER`（代词/连词/WH词）或 `ELABORATION_STARTER`（副词/比较/限定词）<br>• 不是列表逗号（`_is_list_comma()` — 右侧有 and/or 且无从句信号）<br>• 找到最右侧符合条件的逗号 → 分割 → 递归处理两侧子段 |
 | **输出** | 细化后的段列表 |
-| **函数** | `_comma_split()` (line 221)，`_is_list_comma()` (line 174) |
+| **函数** | [`_comma_split()`](../tools/llm_pipeline.py)，[`_is_list_comma()`](../tools/llm_pipeline.py) |
 
 ```
 示例：
@@ -201,7 +201,7 @@ LLM 提示词（默认版）：
 | **输入** | 阶段 6 的输出，`words`，`min_words` |
 | **算法** | 两层结构：<br><br>**第一层（规则，无 LLM 调用）：**<br>• `but` → 始终可分割<br>• `so` + `CLAUSE_STARTER` → 分割（连词 so）<br>• `so` + 形容词/副词 → **不**分割（加强词 so，如 "so good"）<br>• `or` + `CLAUSE_STARTER` → 分割<br>• `and` + `CLAUSE_STARTER` → 分割<br><br>**第二层（LLM 辅助）：**<br>• `and` + 非 `CLAUSE_STARTER` → LLM 判断是否连接两个完整分句<br>• 通过 `_classify_conjunctions()` 发送 YES/NO 二分类问题 |
 | **输出** | 细化后的段列表 |
-| **函数** | `_conjunction_split()` (line 355)，`_classify_conjunctions()` (line 841)，`_find_ambiguous_conjunctions()` (line 323)，`_is_so_intensifier_target()` (line 85) |
+| **函数** | [`_conjunction_split()`](../tools/llm_pipeline.py)，[`_classify_conjunctions()`](../tools/llm_pipeline.py)，[`_find_ambiguous_conjunctions()`](../tools/llm_pipeline.py)，[`_is_so_intensifier_target()`](../tools/llm_pipeline.py) |
 
 ```
 分割决策树 (for "and" at position i):
@@ -237,10 +237,10 @@ LLM 提示词（默认版）：
 |------|------|
 | **目的** | 对阶段 6+7 都无法分割的超长段，用专门的"拆分长句"提示词重新送 LLM |
 | **输入** | 阶段 7 输出中仍超长的段，`words` |
-| **提示词** | `_PHASE8_PROMPT`（line 1560）：专门要求拆分"and/so/and then"连接的完整意群，在句首连词前加句号 |
+| **提示词** | [`_PHASE8_PROMPT`](../tools/llm_pipeline.py)：专门要求拆分"and/so/and then"连接的完整意群，在句首连词前加句号 |
 | **算法** | ① 用专门的 `_PHASE8_PROMPT` 调用 `_llm()`<br>② `_find_new_breaks()` 找出新增 .?! 断点<br>③ 递归单分割：`_pick_break()` 每次选最平衡（最小化左右词数差）且通过所有保护的断点<br>④ `_split_recursive()` 递归分割两侧，直至所有子段都符合长度限制或无可选断点<br><br>**保护（`_pick_break`）：**<br>• FRAGILE_RE：断点左侧不以脆弱词结尾<br>• 短语二元组：不破坏固定表达<br>• 连词片段：左侧 ≤4 词且以 and/but/so/or 开头 → 拒绝<br>• 加强词 so 检查<br>• 列表枚举保护：断点在 and/or 前且左侧有逗号 → 可能是列表，不分割 |
 | **输出** | 细化后的段列表 |
-| **函数** | `_pick_break()` (line 1633)，`_split_recursive()` (line 1706) |
+| **函数** | [`_pick_break()`](../tools/llm_pipeline.py)，[`_split_recursive()`](../tools/llm_pipeline.py) |
 
 ```
 与阶段 4 的区别：
@@ -275,7 +275,7 @@ LLM 提示词（默认版）：
 | **条件** | 候选片段：词数 ≤ 8 且首词为 `and/but/so/or`，且前一段不以 .?! 结尾 |
 | **算法** | ① 收集所有候选片段 `(idx, seg, first_word)`<br>② 调用 `_classify_conj_merge()`：LLM 判断每个候选是 CONTINUATION（合并） 还是 NEW_SENTENCE（保留）<br>③ 仅当 LLM 确认 CONTINUATION 且合并后不超限时才执行合并 |
 | **输出** | 细化后的段列表 |
-| **函数** | `_classify_conj_merge()` (line 916) |
+| **函数** | [`_classify_conj_merge()`](../tools/llm_pipeline.py) |
 
 ```
 示例：
@@ -300,7 +300,7 @@ LLM 提示词（默认版）：
 | **条件** | 词数 > `max_words`（30）或（字符数 > `max_chars`（120）且词数 > 20） |
 | **算法** | 三轮尝试：<br><br>**第 1 轮：逗号分割**<br>• 扫描所有逗号，选最平衡（最小化 |left-right|）且通过列表逗号检查的<br>• 逗号词不计入任一侧的词数<br><br>**第 2 轮：连词/从属连词分割**<br>• 并列连词（and/but/so/or）+ 从句主语 → 可分割，选最平衡的<br>• 从属连词（because/although/since/unless/while/when/where/if/as）→ 始终可分割，选最平衡的<br>• 非从句主语的 so/or/and → 不在此处分割（留给 LLM 阶段）<br><br>**第 3 轮：强制中间分割**<br>• `mid = n // 2`，直接从中点一分为二<br>• 递归处理两侧直至所有段符合限制 |
 | **输出** | 最终段列表（分割管道的最终输出） |
-| **函数** | `_phase10_split()` (line 1849)，`_phase10_within_limits()` (line 1840) |
+| **函数** | [`_phase10_split()`](../tools/llm_pipeline.py)，[`_phase10_within_limits()`](../tools/llm_pipeline.py) |
 
 ## LLM 调用总结
 

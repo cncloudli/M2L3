@@ -5,7 +5,7 @@
     "target_lang_code": "CN",
     "source_lang": "English",
 
-    "add_punctuation": true,
+    "add_punctuation": false,
     "allow_flexible_word_order": false,
     "allow_simplify_wording": false,
     "number_mode": "auto",

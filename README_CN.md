@@ -10,7 +10,7 @@
 | **分割 (Segment)** | 通过 llama-server 调用 Phi-4（10 阶段 LLM 精炼） | 所有内容类型 |
 | **翻译 (Translate)** | 通过 llama-server 调用 Phi-4 或在线 LLM（需 API） | 转写后 EN → 任意语言 |
 
-所有处理流程**完全离线运行**——无需上传数据至外部服务器。
+所有处理流程**完全离线运行**——无需上传数据至外部服务器。(在线 LLM 翻译是**可选的**)
 
 ---
 
@@ -42,6 +42,17 @@
 | [tools/llm_pipeline.py](tools/llm_pipeline.py) | **LLM 分割引擎。** `LLMPipeline` 类 — 管理 llama-server 子进程生命周期，运行 10 阶段分割算法（参见 [docs/segmentation_pipeline_CN.md](docs/segmentation_pipeline_CN.md) 获取完整算法流程图）。`segment_with_llm()` 便捷函数用于一次性 CLI 使用。 |
 | [tools/non_split_bigrams.py](tools/non_split_bigrams.py) | **短语保护。** `NON_SPLIT_BIGRAMS` 集合（约 5700 条）包含固定表达、短语动词和搭配，这些内容不得在字幕段间分割。`would_break_phrase()` 查找函数被所有分割阶段使用。 |
 | [tools/llama/](tools/llama/) | **llama.cpp 二进制文件。** 预编译的 `llama-server.exe` + CUDA 12 DLL，用于本地 LLM 推理。已从 git 中排除——参见[安装 → llama.cpp 二进制文件](#llamacpp-二进制文件)。 |
+
+### `docs/` 目录
+
+| 文件 | 用途                                                          |
+|------|-------------------------------------------------------------|
+| [docs/segmentation_pipeline.md](docs/segmentation_pipeline.md) | **10 阶段 LLM 分割算法文档（英文）。** 完整的算法流程图及各阶段的详细说明、保护机制和 LLM 调用总结。 |
+| [docs/segmentation_pipeline_CN.md](docs/segmentation_pipeline_CN.md) | **10 阶段 LLM 分割算法文档（中文）。** 同上，中文版。                           |
+| [docs/transcription_n_translation.md](docs/transcription_n_translation.md) | **转录与翻译技术实现（英文）。** ASR→对齐→分割流水线及翻译工厂后端的设计思路、参数选择和代码介绍。      |
+| [docs/transcription_n_translation_CN.md](docs/transcription_n_translation_CN.md) | **转录与翻译技术实现（中文）。** 同上，中文版。                                  |
+| [docs/models_n_hardware_reqs.md](docs/models_n_hardware_reqs.md) | **模型与硬件需求说明。**（TODO — 将介绍所使用的 LLM 模型、显存/内存/硬盘需求及性能参考。）      |
+| [docs/models_n_hardware_reqs_CN.md](docs/models_n_hardware_reqs_CN.md) | **模型与硬件需求说明。**（TODO — 同上，中文版。）                              |
 
 ---
 
@@ -98,7 +109,9 @@ pip install -r requirements.txt
 2. 下载对应环境的 zip 文件
 3. 将**所有文件**解压至 `tools/llama/`
 
-`llama-server.exe`（9 KB）是主要的推理服务器。附带的 DLL 文件在运行时必需；其他 .exe 工具为可选项。
+
+> **说明**：发布页上还有一个 **"CUDA 12.4 DLLs"** 独立包（`cudart-llama-bin-win-cuda-12.4-x64.zip`，约 750 MB）。这是可选的补充包——它提供 NVIDIA 官方的 cuBLAS 库，在部分 GPU 上比 `ggml-cuda.dll` 内置实现有轻微性能提升。标准 CUDA 版不依赖它也能正常工作。如需使用，将其中 3 个 DLL 解压到同一 `tools/llama/` 目录即可。
+
 
 ### 模型
 
@@ -246,6 +259,9 @@ python main.py -i <input> [options]
 # 默认
 python main.py -i input/input.mp4
 
+# 路径中若包括空格或特殊字符请加引号
+python main.py -i input/"input.mp4" 
+
 # 自定义输出路径
 python main.py -i input/input.mp4 -o D:/output/lecture.srt
 
@@ -353,7 +369,7 @@ python translate.py -i <input> [options]
     "target_lang": "Chinese",
     "target_lang_code": "CN",
     "source_lang": "English",
-    "add_punctuation": true,
+    "add_punctuation": false,
     "allow_flexible_word_order": false,
     "allow_simplify_wording": false,
     "number_mode": "auto",
@@ -400,6 +416,7 @@ python translate.py -i <input> [options]
 ```powershell
 # 本地 Phi-4 — 将 TXT 翻译为中文（默认）
 python translate.py -i output/input.txt
+python translate.py -i output/"input.txt"
 # → output/input_CN.txt
 
 # 本地 Phi-4 — 翻译 SRT（保留时间码）
@@ -467,8 +484,12 @@ M2L3/
 │   ├── faster-whisper-large-v3/    # ASR 模型（~3 GB）
 │   └── phi-4-Q4_K_M.gguf           # 用于分割与翻译的 LLM（~8.5 GB，Phi-4 14B）
 ├── docs/
-│   ├── segmentation_pipeline.md    # 10-phase LLM segmentation algorithm chart (English)
-│   └── segmentation_pipeline_CN.md # 10 阶段 LLM 分割算法流程图（中文）
+│   ├── segmentation_pipeline.md           # 10-phase LLM segmentation algorithm (English)
+│   ├── segmentation_pipeline_CN.md        # 10 阶段 LLM 分割算法文档（中文）
+│   ├── transcription_n_translation.md     # Transcription & translation technical implementation (English)
+│   ├── transcription_n_translation_CN.md  # 转录与翻译技术实现文档（中文）
+│   ├── models_n_hardware_reqs.md          # (TODO) Models & hardware requirements
+│   └── models_n_hardware_reqs_CN.md       # (TODO) 模型与硬件需求说明
 ├── tools/
 │   ├── llama/
 │   │   └── llama-server.exe        # llama.cpp 推理服务器（CUDA）
