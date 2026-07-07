@@ -13,17 +13,17 @@ build/
 *.egg
 
 # ── Large binary files (not source) ────────────────────────────
-models/
+models/*
 !models/.gitkeep
-tools/llama
+tools/llama/*
 !tools/llama/.gitkeep
 
 # ── Input, generated output & cache ────────────────────────────────────
-input/
+input/*
 !input/.gitkeep
-output/
+output/*
 !output/.gitkeep
-cache/
+cache/*
 !cache/.gitkeep
 
 
