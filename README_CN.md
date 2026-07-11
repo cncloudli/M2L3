@@ -62,12 +62,25 @@
 
 | 类别 | 示例 | 安装方式 |
 |----------|----------|---------------|
-| **系统工具** | FFmpeg、Python venv | 手动（一次性） |
+| **系统工具** | NVIDIA 驱动（≥ CUDA 12.8）、FFmpeg、Python venv | 手动（一次性） |
 | **llama.cpp 二进制** | `llama-server.exe` | 下载 zip → 解压到 `tools/llama/`（参见下方变体说明） |
 | **预下载模型** | faster-whisper-large-v3、Phi-4 GGUF | 手动下载到 `models/` |
 | **自动下载模型** | Silero VAD、Wav2Vec2、NLTK | `python tools/download_models.py` |
 
 > **GPU vs CPU**：整个流水线（ASR + 对齐 + LLM）**自动检测 CUDA**，若无 GPU 则**回退至 CPU**。无需特殊标志——只需选择下方对应的 llama.cpp 变体。
+
+### NVIDIA 驱动与 CUDA
+
+项目依赖 PyTorch CUDA 12.8（参见 `requirements.txt` 中的 `torch==2.8.0+cu128`），**必须配合兼容的 NVIDIA 驱动**才能启用 GPU 加速。
+
+| 需求 | 说明 |
+|------|------|
+| **NVIDIA GPU** | 架构 ≥ Maxwell（GTX 900 系列或更新），最低 4 GB 显存（推荐 8 GB+） |
+| **NVIDIA 驱动** | 版本 ≥ **R570**（CUDA 12.8 的最终驱动支持发布于 2026 年 7 月；请更新至最新 Game Ready / Studio Driver） |
+| **CUDA Toolkit** | **不需要安装。** PyTorch 自带 CUDA 运行时，`requirements.txt` 中的 `torch==2.8.0+cu128` 版本已经包含所需的 `cudart` 和 `cublas`。只需确保驱动足够新即可。 |
+| **无 GPU / CPU 模式** | 程序自动检测 CUDA，不可用时自动回退到 CPU（速度较慢）。无需任何额外配置。 |
+
+验证方式：运行 `nvidia-smi`，查看顶部显示的 **CUDA Version** 是否为 12.8 或更高。如果版本过低或没有输出，请从 [NVIDIA 驱动下载](https://www.nvidia.com/Download/index.aspx) 更新驱动。
 
 ### FFmpeg
 
@@ -174,13 +187,13 @@ python tools/download_models.py
 ```
 > 若下载缓慢，可在运行前设置镜像：PowerShell 中执行 `$env:HF_ENDPOINT = "https://hf-mirror.com"`
 
-下载内容：
+下载到 `models/hub/` ：
 
 | 模型 | 大小 | 使用者 | 描述 |
 |-------|------|---------|-------------|
-| **Silero VAD** | ~5 MB | `tools/extract.py` | 语音活动检测——在音频中定位语音片段 |
+| **Silero VAD** | ~35 MB | whisperx（VAD） | 语音活动检测——在音频中定位语音片段 |
 | **Wav2Vec2（base 960h）** | ~360 MB | WhisperX 对齐 | 音素级词时间戳对齐 |
-| **NLTK punkt_tab** | ~10 MB | WhisperX 对齐（内部） | 句子边界检测，用于音素级强制对齐 |
+| **NLTK punkt_tab** | ~64 MB | WhisperX 对齐（内部） | 句子边界检测，用于音素级强制对齐 |
 
 ---
 
@@ -324,6 +337,10 @@ python batch_pipeline.py -translate
 使用**本地 LLM**（通过 llama-server 调用 Phi-4）或**6 种在线 API 后端**翻译 SRT（保留时间码）或纯文本 TXT 文件。
 自动检测输入格式——SRT 文件保留时间码，TXT 文件按纯文本行处理。
 
+支持两种翻译模式：
+- **`accurate`**（默认）：小型滑动窗口（每次 2 行，上下文 4 行），逐行独立翻译，极低的时间轴错位风险。**推荐本地 Phi-4 模型使用**——本地模型推理速度较慢，小窗口可保持稳定的延迟和较低的资源占用。
+- **`flexible`**：大型滑动窗口（每次 4 行，上下文 8 行），含时间码提示，允许 LLM 跨行调整语序以获得更自然的措辞。**更适合在线 API 后端**——高速 API 可充分利用大窗口的上下文优势。
+
 ```powershell
 python translate.py -i <input> [options]
 ```
@@ -340,6 +357,8 @@ python translate.py -i <input> [options]
 | `-backend <name>` | `local` | 翻译后端：`local`、`deepseek`、`openai`、`qwen`、`gemini`、`ollama`、`anthropic` |
 | `-model <name>` | 各后端默认值 | 所选后端对应的模型名称（参见下方表格） |
 | `-gpu-layers <N>` | 自动检测 | GPU 层数（仅本地后端） |
+| `-mode <name>` | `accurate` | 翻译模式：`accurate`（精准，每次 2 行）+ `flexible`（灵活，每次 4 行，含时间码） |
+| `-mode <name>` | `accurate` | 翻译模式：`accurate`（精准，每次 2 行）+ `flexible`（灵活，每次 4 行，含时间码） |
 
 #### 翻译后端
 
@@ -377,7 +396,6 @@ python translate.py -i <input> [options]
     "glossary": ["EXAMPLE1", "EXAMPLE2", "VRAM", "CUDA"],
     "custom_system_prompt": null,
     "cache_prompt": false,
-    "batch_size": 8,
     "openai_api_key": "",
     "anthropic_api_key": "",
     "api_base_url": ""
@@ -392,14 +410,13 @@ python translate.py -i <input> [options]
 | `target_lang_code` | string | `"CN"` | 追加到输出文件名的语言代码                                                                                                                                                                    |
 | `source_lang` | string | `"English"` | 源语言名称（用于提示词）                                                                                                                                                                     |
 | `add_punctuation` | bool | `true` | 在翻译中添加句末标点（。？！）。当为 `false` 时，通过后处理去除句末标点——不将此约束强加给 LLM。                                                                                                                          |
-| `allow_flexible_word_order` | bool | `false` | 允许在相邻行间重新分配内容以获得更自然的措辞。**警告：可能导致行号偏移**                                                                                                                                           |
-| `allow_simplify_wording` | bool | `false` | 允许精简每行内的口语化/冗长表达（填充词、冗余、啰嗦）——与词序灵活性无关                                                                                                                                            |
-| `number_mode` | string | `"auto"` | 数字处理模式：`"auto"`（LLM 自行决定）、`"src_lang"`（保留源格式）、`"digits"`（统一阿拉伯数字）、`"tgt_lang"`（目标语言数字形式）                                                                                         |
-| `space_between_cjk_and_latin` | bool | `false` | 在中日韩字符与拉丁字符之间插入空格                                                                                                                                                                |
-| `glossary` | string[] | `[]` | 保持不翻译的术语（原样保留）                                                                                                                                                                   |
-| `custom_system_prompt` | string\|null | `none` | 覆盖整个 LLM 系统提示词（禁用所有其他提示标志）                                                                                                                                                       |
-| `cache_prompt` | bool | `false` | 启用跨批次的 KV-cache 复用（仅 `local` 后端）。降低延迟，但可能在长翻译任务中导致指令衰减——**本地模型建议设为 `false`，该参数不会影响在线后端**                                                                                         |
-| `batch_size` | int | `8` | 每次 LLM 请求发送的行数                                                                                                                                                                   |
+| `allow_flexible_word_order` | bool | `false` | 允许在相邻行间重新分配内容以获得更自然的措辞。**⚠ 仅 `flexible` 模式下可用**（`accurate` 模式下不会传递此参数）。**强烈建议仅在 API 后端中启用**——本地模型下使用可能导致不稳定的行号偏移。                                                                     |
+| `allow_simplify_wording` | bool | `false` | 允许精简每行内的口语化/冗长表达（填充词、冗余、啰嗦）。**⚠ 仅 `flexible` 模式下可用**（`accurate` 模式下不会传递此参数）。**强烈建议仅在 API 后端中启用**——本地模型效果不佳。                                          |
+| `number_mode` | string | `"auto"` | 数字处理模式：`"auto"`（LLM 自行决定）、`"src_lang"`（保留源格式）、`"digits"`（统一阿拉伯数字）、`"tgt_lang"`（目标语言数字形式）。**建议在在线 API 中使用**——本地模型也能正常生效，但效果可能不稳定。在两种模式下均可使用。     |
+| `space_between_cjk_and_latin` | bool | `false` | 在中日韩字符与拉丁字符之间插入空格                                                                                                                                                              |
+| `glossary` | string[] | `[]` | 保持不翻译的术语（原样保留）。**建议在在线 API 中使用**——本地模型也能正常生效，但效果可能不稳定。在两种模式下均可使用。                                                                                 |
+| `custom_system_prompt` | string\|null | `none` | 覆盖整个 LLM 系统提示词（禁用所有其他提示标志）                                                                                                                                                     |
+| `cache_prompt` | bool | `false` | 启用跨批次的 KV-cache 复用（仅 `local` 后端）。降低延迟，但可能在长翻译任务中导致指令衰减。**强烈建议仅在 API 后端中启用**，本地模型应设为 `false`。在两种模式下均可使用。                                                     |
 | `openai_api_key` | string | `""` | OpenAI 兼容后端的 API 密钥。**建议：** 改为在 `.env` 中设置 `OPENAI_API_KEY`                                                                                                                      |
 | `anthropic_api_key` | string | `""` | Anthropic 后端的 API 密钥。**建议：** 改为在 `.env` 中设置 `ANTHROPIC_API_KEY`                                                                                                                  |
 | `api_base_url` | string | `""` | 覆盖所选 API 后端的 base URL。例如 DeepSeek：`"https://api.deepseek.com"`（OpenAI 格式）或 `"https://api.deepseek.com/anthropic"`（Anthropic Messages 格式）。代码通过检查 URL 是否包含 `anthropic` 自动检测使用哪种格式。 |
@@ -481,6 +498,10 @@ M2L3/
 ├── README_CN.md            # 中文版文档（本文件）
 ├── requirements.txt
 ├── models/
+│   ├── hub/                        # 本地模型缓存
+│   │   ├── checkpoints/            # Wav2Vec2 对齐模型（~360 MB）
+│   │   ├── nltk_data/              # NLTK 分词数据（~64 MB）
+│   │   └── snakers4_silero-vad_master/  # Silero VAD 语音活动检测（~35 MB）
 │   ├── faster-whisper-large-v3/    # ASR 模型（~3 GB）
 │   └── phi-4-Q4_K_M.gguf           # 用于分割与翻译的 LLM（~8.5 GB，Phi-4 14B）
 ├── docs/

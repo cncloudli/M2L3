@@ -5,10 +5,11 @@ so the pipeline can run fully offline.
 Usage:
     python tools/download_models.py
 
-This will download (if not already cached):
-  1. Silero VAD        →  C:/Users/<USER>/.cache/torch/hub/snakers4_silero-vad_master/
-  2. Wav2Vec2 align    →  C:/Users/<USER>/.cache/torch/hub/checkpoints/  (360 MB)
-  3. NLTK punkt_tab    →  C:/Users/<USER>/AppData/Roaming/nltk_data/
+This will download (if not already cached) to ``models/hub/``:
+
+  1. Silero VAD        →  models/hub/snakers4_silero-vad_master/
+  2. Wav2Vec2 align    →  models/hub/checkpoints/  (360 MB)
+  3. NLTK punkt_tab    →  models/hub/nltk_data/
 """
 import io
 import os
@@ -26,8 +27,11 @@ os.environ["HTTP_PROXY"] = ""
 os.environ["HTTPS_PROXY"] = ""
 os.environ["NO_PROXY"] = "*"
 
-TORCH_CACHE = Path.home() / ".cache" / "torch" / "hub"
-NLTK_DIR = Path.home() / "AppData" / "Roaming" / "nltk_data"
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+HUB_DIR = PROJECT_ROOT / "models" / "hub"
+TORCH_CACHE = HUB_DIR                     # torch hub set_dir → models/hub/
+CHECKPOINTS_DIR = HUB_DIR / "checkpoints" # Wav2Vec2 → models/hub/checkpoints/
+NLTK_DIR = HUB_DIR / "nltk_data"          # NLTK data → models/hub/nltk_data/
 
 
 def download_silero_vad() -> bool:
@@ -95,8 +99,9 @@ def download_nltk_data() -> bool:
 
     print("Downloading NLTK punkt_tab ...")
     try:
-        nltk.download("punkt_tab", quiet=True)
-        nltk.download("punkt", quiet=True)
+        nltk.data.path.insert(0, str(NLTK_DIR))
+        nltk.download("punkt_tab", download_dir=str(NLTK_DIR), quiet=True)
+        nltk.download("punkt", download_dir=str(NLTK_DIR), quiet=True)
         # Verify
         nltk.data.find("tokenizers/punkt")
         print("[OK] NLTK punkt ready")

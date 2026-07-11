@@ -15,7 +15,6 @@
     ],
     "custom_system_prompt": null,
     "cache_prompt": false,
-    "batch_size": 8,
 
     "openai_api_key": "",
     "anthropic_api_key": "",

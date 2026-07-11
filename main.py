@@ -15,7 +15,11 @@ from pathlib import Path
 # ══════════════════════════════════════════════════════════════════════════════
 # Proxy / GPU environment — must run before any model download
 # ══════════════════════════════════════════════════════════════════════════════
-import tools.config  # noqa: F401  (sets HTTP_PROXY, NO_PROXY, CUDA_VISIBLE_DEVICES)
+import tools.config  # noqa: F401  (sets HTTP_PROXY, NO_PROXY, CUDA_VISIBLE_DEVICES, exposes helpers)
+from tools.config import get_app_dir, get_bundle_dir
+
+# ── Patch transformers for frozen env (MUST be before any whisperx/transformers import) ──
+import tools._patch_transformers  # noqa: F401
 
 # Suppress spurious torchcodec warning from pyannote.audio (fallback to FFmpeg is fine)
 warnings.filterwarnings("ignore", category=UserWarning, module="pyannote")
@@ -50,13 +54,27 @@ if _orig_parse_repo_info:
             ) from _e
     torch.hub._parse_repo_info = _patched_parse_repo_info
 
+# ── Redirect torch hub cache to local models/hub/ ──
+# Both Silero VAD (35 MB) and Wav2Vec2 checkpoints (360 MB) are
+# pre-downloaded there so they ship with the packaged exe.
+_HUB_DIR = get_bundle_dir() / "models" / "hub"
+torch.hub.set_dir(str(_HUB_DIR))
+
+# ── Redirect NLTK data path ──
+# whisperx uses nltk punkt / punkt_tab tokenizers for sentence-aware
+# forced alignment.  The data is bundled alongside the hub models.
+import nltk
+_NLTK_DIR = _HUB_DIR / "nltk_data"
+if _HUB_DIR.exists() and _NLTK_DIR.exists():
+    nltk.data.path.insert(0, str(_NLTK_DIR))
+
 from tools.env_check import check_ffmpeg, check_cuda
 from tools.cache import save_words_cache
 from tools.export import export_srt, export_txt  # , export_word_level  # (word-level debug, commented out)
 from tools.extract import extract_words_from_result, fix_word_timestamps
 
 # ── Paths ───────────────────────────────────────────────────────────────────
-BASE_DIR = Path(__file__).parent.resolve()
+BASE_DIR = get_app_dir()
 MODEL_PATH = BASE_DIR / "models" / "faster-whisper-large-v3"
 
 
@@ -298,8 +316,9 @@ if __name__ == "__main__":
         print("=" * 55)
         print("  Translating output…")
         print("=" * 55)
-        translate_script = str((BASE_DIR / "translate.py").resolve())
-        translate_cmd = [sys.executable, translate_script, "-i", srt_path]
+        translate_cmd = [str(BASE_DIR / "translate.exe"), "-i", srt_path] \
+            if getattr(sys, "frozen", False) \
+            else [sys.executable, str(BASE_DIR / "translate.py"), "-i", srt_path]
         if args.backend != "local":
             translate_cmd += ["-backend", args.backend]
             if args.model:

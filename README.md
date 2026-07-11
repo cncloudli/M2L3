@@ -61,12 +61,25 @@ All processing runs **fully offline** — no data leaves your machine. (Online L
 
 | Category | Examples | Install method |
 |----------|----------|---------------|
-| **System tools** | FFmpeg, Python venv | Manual (one-time) |
+| **System tools** | NVIDIA driver (≥ CUDA 12.8), FFmpeg, Python venv | Manual (one-time) |
 | **llama.cpp binary** | `llama-server.exe` | Download zip → extract to `tools/llama/` (see variant notes below) |
 | **Pre-downloaded models** | faster-whisper-large-v3, Phi-4 GGUF | Manual download to `models/` |
 | **Auto-downloaded models** | Silero VAD, Wav2Vec2, NLTK | `python tools/download_models.py` |
 
 > **GPU vs CPU**: The entire pipeline (ASR + alignment + LLM) **auto-detects CUDA and falls back to CPU** if no GPU is available. No special flags needed — just choose the right llama.cpp variant below.
+
+### NVIDIA Driver & CUDA
+
+The project depends on PyTorch CUDA 12.8 (see `torch==2.8.0+cu128` in `requirements.txt`), which **requires a compatible NVIDIA driver** for GPU acceleration.
+
+| Requirement | Notes |
+|-------------|-------|
+| **NVIDIA GPU** | Architecture ≥ Maxwell (GTX 900 series or newer), minimum 4 GB VRAM (8 GB+ recommended) |
+| **NVIDIA Driver** | Version ≥ **R570** (Final driver support for CUDA 12.8 was released July 2026; update to the latest Game Ready / Studio Driver) |
+| **CUDA Toolkit** | **Not required.** PyTorch ships its own CUDA runtime — `torch==2.8.0+cu128` includes the necessary `cudart` and `cublas` libraries. A sufficiently recent NVIDIA driver is all you need. |
+| **No GPU / CPU mode** | The pipeline auto-detects CUDA and falls back to CPU when unavailable (slower). No additional configuration needed. |
+
+To verify, run `nvidia-smi` and check the **CUDA Version** line at the top. If it's below 12.8 or `nvidia-smi` produces no output, update your driver from [NVIDIA Driver Downloads](https://www.nvidia.com/Download/index.aspx).
 
 ### FFmpeg
 
@@ -147,13 +160,13 @@ hf_hub_download('unsloth/phi-4-GGUF', 'phi-4-Q4_K_M.gguf', local_dir='models')
 python tools/download_models.py
 ```
 
-Downloads:
+Downloads to `models/hub/` :
 
 | Model | Size | Used by | Description |
 |-------|------|---------|-------------|
-| **Silero VAD** | ~5 MB | `tools/extract.py` | Voice Activity Detection — finds speech segments in audio |
+| **Silero VAD** | ~35 MB | whisperx (VAD) | Voice Activity Detection — finds speech segments in audio |
 | **Wav2Vec2 (base 960h)** | ~360 MB | WhisperX align | Phoneme-level word timestamp alignment |
-| **NLTK punkt_tab** | ~10 MB | WhisperX alignment (internal) | Sentence boundary detection for phoneme-level forced alignment |
+| **NLTK punkt_tab** | ~64 MB | WhisperX alignment (internal) | Sentence boundary detection for phoneme-level forced alignment |
 
 ---
 
@@ -297,6 +310,10 @@ python batch_pipeline.py -translate
 Translates SRT (preserving timecodes) or plain TXT files using a **local LLM** (Phi-4 via llama-server) or any of **6 online API backends**.
 Auto-detects input format by content — SRT files keep their timecodes, TXT files are treated as plain text lines.
 
+Two translation modes are available:
+- **`accurate`** (default): Small sliding window (2 lines per batch, context 4 lines), strictly line-by-line translation with minimal timeline misalignment risk. **Recommended for local Phi-4 models** — slower local inference benefits from the smaller window for stable latency and lower resource usage.
+- **`flexible`**: Larger sliding window (4 lines per batch, context 8 lines), with timecode hints, allows cross-line rephrasing for more natural-sounding output. **Better suited for online API backends** — high-speed APIs can take full advantage of the larger context window.
+
 ```powershell
 python translate.py -i <input> [options]
 ```
@@ -313,6 +330,7 @@ python translate.py -i <input> [options]
 | `-backend <name>` | `local` | Translation backend: `local`, `deepseek`, `openai`, `qwen`, `gemini`, `ollama`, `anthropic` |
 | `-model <name>` | per-backend default | Model name for the selected backend (see table below) |
 | `-gpu-layers <N>` | auto-detect | GPU layers (local backend only) |
+| `-mode <name>` | `accurate` | Translation mode: `accurate` (strict, 2 lines/batch) or `flexible` (relaxed, 4 lines/batch, with timecodes) |
 
 #### Translation backends
 
@@ -350,7 +368,6 @@ Edit [translate_config.json](translate_config.json) in the project root, or use 
     "glossary": ["EXAMPLE1", "EXAMPLE2", "VRAM", "CUDA"],
     "custom_system_prompt": null,
     "cache_prompt": false,
-    "batch_size": 8,
     "openai_api_key": "",
     "anthropic_api_key": "",
     "api_base_url": ""
@@ -365,14 +382,13 @@ Edit [translate_config.json](translate_config.json) in the project root, or use 
 | `target_lang_code` | string | `"CN"`      | Language code appended to output filename                                                                                                                                                                                                                                |
 | `source_lang` | string | `"English"` | Source language name (used in prompts)                                                                                                                                                                                                                                   |
 | `add_punctuation` | bool | `true`      | Add sentence-ending punctuation (。？！) in translation. When `false`, sentence-ending punctuation is stripped via post-processing — the LLM is not burdened with this constraint.                                                                                          |
-| `allow_flexible_word_order` | bool | `false`     | Allow content to be redistributed across adjacent lines for more natural phrasing. **WARNING: May cause misalignment of line index**                                                                                                                                     |
-| `allow_simplify_wording` | bool | `false`     | Allow condensing colloquial/verbose expressions within each line (filler words, redundancies, rambling) — independent of word-order flexibility                                                                                                                          |
-| `number_mode` | string | `"auto"`    | Number handling mode: `"auto"` (LLM decides), `"src_lang"` (keep source format), `"digits"` (all Arabic digits), `"tgt_lang"` (target language's native numerals)                                                                                                        |
+| `allow_flexible_word_order` | bool | `false`     | Allow content to be redistributed across adjacent lines for more natural phrasing. **⚠ Only available in `flexible` mode** (not passed in `accurate` mode). **Strongly recommended for API backends only** — local models may produce unstable line index shifts.                  |
+| `allow_simplify_wording` | bool | `false`     | Allow condensing colloquial/verbose expressions within each line (filler words, redundancies, rambling). **⚠ Only available in `flexible` mode** (not passed in `accurate` mode). **Strongly recommended for API backends only** — less effective with local models.                   |
+| `number_mode` | string | `"auto"`    | Number handling mode: `"auto"` (LLM decides), `"src_lang"` (keep source format), `"digits"` (all Arabic digits), `"tgt_lang"` (target language's native numerals). **Recommended for online API backends** — works with local models but may be less consistent. Usable in both modes.          |
 | `space_between_cjk_and_latin` | bool | `false`     | Insert space between CJK and Latin characters                                                                                                                                                                                                                            |
-| `glossary` | string[] | `[]`        | Terms to keep untranslated (preserve exactly as written)                                                                                                                                                                                                                 |
+| `glossary` | string[] | `[]`        | Terms to keep untranslated (preserve exactly as written). **Recommended for online API backends** — works with local models but may be less consistent. Usable in both modes.                                                                                 |
 | `custom_system_prompt` | string\|null | `none`      | Override the entire LLM system prompt (disables all other prompt flags)                                                                                                                                                                                                  |
-| `cache_prompt` | bool | `false`     | Enable KV-cache reuse across batches (`local` backend only). Reduces latency but may cause instruction drift in long translation sessions — **recommend `false` for local models, won't affect online backends**.                                                        |
-| `batch_size` | int | `8`         | Number of lines sent per LLM request                                                                                                                                                                                                                                     |
+| `cache_prompt` | bool | `false`     | Enable KV-cache reuse across batches (`local` backend only). Reduces latency but may cause instruction drift in long translation sessions. **Strongly recommended for API backends only** — set to `false` for local models. Usable in both modes.                                                     |
 | `openai_api_key` | string | `""`        | API key for OpenAI-compatible backends. **Recommended:** set via `OPENAI_API_KEY` in `.env` instead.                                                                                                                                                                     |
 | `anthropic_api_key` | string | `""`        | API key for Anthropic backend. **Recommended:** set via `ANTHROPIC_API_KEY` in `.env` instead.                                                                                                                                                                           |
 | `api_base_url` | string | `""`        | Override base URL for the selected API backend. For DeepSeek: `"https://api.deepseek.com"` (OpenAI format) or `"https://api.deepseek.com/anthropic"` (Anthropic Messages format). The code auto-detects which format to use by checking if the URL contains `anthropic`. |
@@ -454,6 +470,10 @@ M2L3/
 ├── README_CN.md            # Chinese documentation
 ├── requirements.txt
 ├── models/
+│   ├── hub/                        # Local model cache 
+│   │   ├── checkpoints/            # Wav2Vec2 alignment model (~360 MB)
+│   │   ├── nltk_data/              # NLTK punkt tokenizers (~64 MB)
+│   │   └── snakers4_silero-vad_master/  # Silero VAD (~35 MB)
 │   ├── faster-whisper-large-v3/    # ASR model (~3 GB)
 │   └── phi-4-Q4_K_M.gguf           # LLM for segmentation & translation (~8.5 GB, Phi-4 14B)
 ├── docs/

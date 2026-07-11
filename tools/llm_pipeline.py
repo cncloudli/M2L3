@@ -16,13 +16,32 @@ Architecture:
 """
 
 import os, re, subprocess, time, json, difflib, atexit
+import sys
+from pathlib import Path
 import requests
 
 from tools.non_split_bigrams import would_break_phrase
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-LLAMA_SERVER = os.path.join(BASE_DIR, "tools", "llama", "llama-server.exe")
-MODEL_PATH = os.path.join(BASE_DIR, "models", "phi-4-Q4_K_M.gguf")
+# ── PyInstaller-aware paths ──────────────────────────────────────────────────
+# ``_APP_DIR`` points to where user data (models/, input/, output/) lives.
+# ``_BUNDLE_DIR`` points to where bundled internal files (tools/llama/) live.
+# In dev mode both are the project root; in packaged mode they diverge.
+if getattr(sys, "frozen", False):
+    _APP_DIR = str(Path(sys.executable).parent.resolve())
+    _internal = Path(sys.executable).parent / "_internal"
+    if _internal.is_dir():
+        _BUNDLE_DIR = str(_internal)
+    elif hasattr(sys, "_MEIPASS"):
+        _BUNDLE_DIR = sys._MEIPASS
+    else:
+        _BUNDLE_DIR = _APP_DIR
+else:
+    _BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    _APP_DIR = _BASE_DIR
+    _BUNDLE_DIR = _BASE_DIR
+
+LLAMA_SERVER = os.path.join(_BUNDLE_DIR, "tools", "llama", "llama-server.exe")
+MODEL_PATH = os.path.join(_APP_DIR, "models", "phi-4-Q4_K_M.gguf")
 NO_PROXY = {"http": None, "https": None}
 
 
@@ -553,7 +572,7 @@ class LLMPipeline:
         if model_path is not None:
             self.model_path = model_path
         elif model in MODEL_REGISTRY:
-            self.model_path = os.path.join(BASE_DIR, "models",
+            self.model_path = os.path.join(_APP_DIR, "models",
                                            MODEL_REGISTRY[model])
         else:
             self.model_path = MODEL_PATH  # fallback to module default

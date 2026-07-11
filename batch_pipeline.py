@@ -20,7 +20,8 @@ import subprocess, sys, os
 from pathlib import Path
 
 
-BASE_DIR = Path(__file__).parent.resolve()
+BASE_DIR = Path(sys.executable).parent.resolve() if getattr(sys, "frozen", False) \
+    else Path(__file__).parent.resolve()
 
 
 # ── CLI ────────────────────────────────────────────────────────────────────
@@ -131,7 +132,8 @@ def entry():
     When the subprocess exits, the CUDA context is fully reclaimed by the driver 
     — identical to running ``python main.py -i <file>`` manually for each file.
     """
-    main_script = str((BASE_DIR / "main.py").resolve())
+    main_script = str((BASE_DIR / "main.exe").resolve()) if getattr(sys, "frozen", False) \
+        else str((BASE_DIR / "main.py").resolve())
 
     results = []
     for vf in video_files:
@@ -142,7 +144,7 @@ def entry():
 
         # Build the subprocess command
         cmd = [
-            sys.executable, main_script,
+            main_script,
             "-i", str(vf.resolve()),
             "-o", str((output_dir / f"{stem}.srt").resolve()),
         ]
@@ -161,9 +163,11 @@ def entry():
                 print(f"  [{stem}] done ✓")
                 # ── Translation ────────────────────────────────────────────
                 if args.translate and os.path.exists(srt_path):
-                    translate_script = str((BASE_DIR / "translate.py").resolve())
+                    translate_script = str((BASE_DIR / "translate.exe").resolve()) \
+                        if getattr(sys, "frozen", False) \
+                        else str((BASE_DIR / "translate.py").resolve())
                     translate_cmd = [
-                        sys.executable, translate_script, "-i", srt_path,
+                        translate_script, "-i", srt_path,
                     ]
                     if args.backend != "local":
                         translate_cmd += ["-backend", args.backend]

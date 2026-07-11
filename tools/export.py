@@ -11,7 +11,7 @@ def export_srt(result, output_path: str):
         if isinstance(result, dict)
         else getattr(result, 'segments', [])
     )
-    with open(output_path, "w", encoding="utf-8") as f:
+    with open(output_path, "w", encoding="utf-8-sig") as f:
         for idx, seg in enumerate(segments, start=1):
             if isinstance(seg, dict):
                 text = seg.get('text', '').strip()
@@ -37,7 +37,7 @@ def export_txt(result, output_path: str, pure_text: bool = True):
         if isinstance(result, dict)
         else getattr(result, 'segments', [])
     )
-    with open(output_path, "w", encoding="utf-8") as f:
+    with open(output_path, "w", encoding="utf-8-sig") as f:
         if pure_text:
             for seg in segments:
                 text = (

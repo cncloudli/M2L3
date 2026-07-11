@@ -2,6 +2,52 @@
 
 This document describes the technical implementation details of speech transcription (ASR → alignment → post-processing) and translation (local/online LLM) in this project. Usage instructions already covered in the README are not repeated.
 
+### 2.9 Translation Modes
+
+`translate_texts()` supports two sliding-window modes, controlled by the `-mode` CLI argument:
+
+| Parameter | `accurate` (default) | `flexible` |
+|-----------|---------------------|------------|
+| `tr_size` (translate window) | 2 lines | 4 lines |
+| `ctx_size` (context window) | 4 lines | 8 lines |
+| `first_step` | 1 line | 2 lines |
+| `later_step` | 2 lines | 4 lines |
+| `show_timecodes` | False | True |
+
+- **`accurate`** — Smaller windows produce strictly line-by-line translations with minimal risk of timeline misalignment. **Recommended for local Phi-4 models** — slower local inference benefits from the smaller window for stable latency and lower resource usage.
+- **`flexible`** — Larger windows with timecode context give the LLM more room to produce natural-sounding phrasing, including cross-line word reordering. **Better suited for online API backends** — high-speed APIs can take full advantage of the larger context window.
+
+#### Configuration Parameter & Mode Compatibility
+
+The following config parameters behave differently depending on the translation mode and backend:
+
+| Parameter | Available in | Recommended backend | Notes |
+|-----------|-------------|---------------------|-------|
+| `allow_flexible_word_order` | **`flexible` only** | Online API | Not passed to the LLM in `accurate` mode (line-by-line is locked). May cause unstable line index shifts with local models; strongly recommended for API backends only. |
+| `allow_simplify_wording` | **`flexible` only** | Online API | Not passed to the LLM in `accurate` mode. Local models have limited ability to follow this instruction reliably; strongly recommended for API backends only. |
+| `cache_prompt` | All modes | Online API | KV-cache reuse reduces latency across batches, but in local models it may cause instruction drift during long translation sessions. Set to `false` for local models. Mode-independent. |
+| `number_mode` | All modes | Online API | Works with local models, but number format consistency may be less reliable than API models. Won't cause negative side effects. Mode-independent. |
+| `glossary` | All modes | Online API | Works with local models, but term fidelity may be less reliable than API models. Won't cause negative side effects. Mode-independent. |
+
+### 2.10 Overflow Merge Protection
+
+When translating in `accurate` mode with online models (e.g. DeepSeek), the LLM may merge content from beyond the translate window into its output. For example, with `tr_size=2`, the LLM might output `[2-3]`, indicating it has translated line 2 together with content from line 3 (which belongs to the next batch).
+
+This is handled through two complementary mechanisms:
+
+**1. Clamp fix (all backends):**
+Instead of discarding output where `m_n >= actual_tr`, the merge range is clamped to `min(m_n, actual_tr - 1)`, ensuring the current window's translation is still stored. The merged content is preserved; overlapping content will be re-translated when its own window arrives.
+
+**2. Overflow re-split (online backends only):**
+When `m_n >= actual_tr` and `online=True`, the pair `(merged_idx, overflowed_idx)` is recorded. After all batches complete, `_fix_overflow()` sends both source lines and their current translations back to the LLM for a clean re-split. The LLM removes duplicate/overlapping content and returns two independent translations. This ensures no content is duplicated or lost without affecting local model behaviour.
+
+```
+[Post-process] Fixing 14 overflow merge(s)...
+  [Fix] Lines 8 & 9: re-split OK
+  [Fix] Lines 10 & 11: re-split OK
+  ...
+```
+
 ---
 
 ## 1. Transcription Pipeline
