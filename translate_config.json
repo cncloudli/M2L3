@@ -1,5 +1,5 @@
 {
-    "_": "Edit this file to configure translate.py.  Restart the script for changes to take effect.",
+    "_": "Edit this file to configure translation settings and API keys.  Changes take effect on the next run.  Also read by tools/llm_call.py for API key loading.",
 
     "target_lang": "Chinese",
     "target_lang_code": "CN",
@@ -15,6 +15,7 @@
     ],
     "custom_system_prompt": null,
     "cache_prompt": false,
+    "drift_threshold": false,
 
     "openai_api_key": "",
     "anthropic_api_key": "",

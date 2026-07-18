@@ -18,6 +18,9 @@ models/*
 tools/llama/*
 !tools/llama/.gitkeep
 
+# ── Benchmark scripts (not for distribution) ──────────────────────────
+benchmark/
+
 # ── Input, generated output & cache ────────────────────────────────────
 input/*
 !input/.gitkeep

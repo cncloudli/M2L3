@@ -6,19 +6,19 @@ Produces a single ``dist/M2L3/`` directory containing all three executables
 that share one ``_internal/`` dependency folder::
 
     dist/M2L3/
-    ├── main.exe              # Transcription pipeline entry point
-    ├── translate.exe         # Translation entry point
-    ├── batch_pipeline.exe    # Batch processing entry point
-    ├── _internal/            # Shared dependencies
-    │   ├── tools/            # tools Python modules + tools/llama/ binaries
+    ├── main.exe              # Transcription + translation entry point
+    ├── translate.exe          # Standalone translation entry point
+    ├── batch.exe              # Batch processing entry point
+    ├── _internal/             # Shared dependencies
+    │   ├── tools/             # tools Python modules + tools/llama/ binaries
     │   ├── torch/ / whisperx/ / …
     │   └── python3*.dll
-    ├── models/               # (keep as-is)
-    ├── input/                # (keep as-is)
-    ├── output/               # (keep as-is)
-    ├── cache/                # (keep as-is)
-    ├── docs/                 # (keep as-is)
-    └── translate_config.json # (keep as-is)
+    ├── models/                # (keep as-is)
+    ├── input/                 # (keep as-is)
+    ├── output/                # (keep as-is)
+    ├── cache/                 # (keep as-is)
+    ├── docs/                  # (keep as-is)
+    └── translate_config.json  # (keep as-is)
 
 Usage:
     cd M2L3/
@@ -75,15 +75,15 @@ block_cipher = None
 #  Analysis — trace all imports from all three entry points
 # ---------------------------------------------------------------------------
 a = Analysis(
-    ["main.py", "translate.py", "batch_pipeline.py"],
+    ["main.py", "scripts/translate.py", "batch.py"],
     pathex=[HOMEPATH],
     binaries=[],
     datas=_collect_llama() + _collect_hub_models() + collect_data_files("pyannote.audio") + collect_data_files("whisperx"),
     hiddenimports=[
-        # tools modules not directly imported by main / translate / batch
-        "tools.punctuation",
-        "tools.segmentation",
-        "tools.nlp",
+        # tools modules used by main / translate / batch
+        "tools.llm_call",
+        "tools.segment",
+        "tools.download_models",     # standalone utility (not imported by entry points)
         # WhisperX internals that PyInstaller may miss
         "whisperx.alignment",
         "whisperx.asr",
@@ -94,6 +94,7 @@ a = Analysis(
     hooksconfig={},
     # Exclude large GUI / data-science libs that are never used
     excludes=[
+        "benchmark",       # benchmark scripts — not for distribution
         "tkinter",
         "matplotlib",
         "notebook",
@@ -147,7 +148,7 @@ exe_main = EXE(
 
 exe_translate = EXE(
     pyz,
-    [s for s in a.scripts if s[0] == "translate"],
+    [s for s in a.scripts if "translate" in str(s[0])],
     a.binaries,
     a.datas,
     [],
@@ -158,12 +159,12 @@ exe_translate = EXE(
 
 exe_batch = EXE(
     pyz,
-    [s for s in a.scripts if s[0] == "batch_pipeline"],
+    [s for s in a.scripts if s[0] == "batch"],
     a.binaries,
     a.datas,
     [],
     exclude_binaries=True,
-    name="batch_pipeline",
+    name="batch",
     **_COMMON_EXE_OPTS,
 )
 

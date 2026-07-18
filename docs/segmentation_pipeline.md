@@ -71,8 +71,7 @@ ASR Word List (with timestamps)
            ┌─────────────────────┐
            │ Check still overlng?│──── No ──→ Output final segs
            │ (words>30 OR        │
-           │  chars>120 AND      │
-           │  words>20)          │
+           │  chars>120)         │
            └─────────┬───────────┘
                      │ Yes
                      ▼
@@ -97,7 +96,7 @@ ASR Word List (with timestamps)
 | **Input** | Word list (`words`: each word has `{text, start, end}`) |
 | **Algorithm** | Iterate through words; whenever a word ends with `.`/`?`/`!`, cut a group (`(start_idx, end_idx)` range) |
 | **Output** | `groups`: list of word-index ranges, each ending with native .?! |
-| **Function** | [`_build_groups()`](../tools/llm_pipeline.py) |
+| **Function** | [`_build_groups()`](../tools/segment.py) |
 | **Edge Cases** | Groups without punctuation are preserved as a single group |
 
 ```
@@ -117,22 +116,40 @@ Output groups: [(0,2), (2,5)]
 | **Output** | `long_group_set` (set of overlength group indices), `n_short` (short group count), `n_long` (long group count) |
 | **Special** | No overlength groups → fast path: build segments from native breaks directly, skip phases 3–10 |
 
-### Phase 3: Merge Adjacent Overlength Groups into Blocks
+### Phase 3: Merge Adjacent Overlength Groups into Blocks & Split Oversized Blocks
 
 | Field | Description |
 |-------|-------------|
-| **Purpose** | Merge consecutive overlength groups into contiguous "blocks" to reduce LLM calls |
-| **Input** | `long_group_set`, `sorted_groups` |
-| **Algorithm** | Iterate through sorted groups; consecutive `(gs, ge) ∈ long_group_set` merge into one `block = [(gs,ge), ...]` |
-| **Output** | `blocks`: list of blocks, each block is a list of one or more contiguous long group ranges |
+| **Purpose** | Merge consecutive overlength groups into contiguous "blocks" (reduces LLM calls), and split oversized blocks at group boundaries to prevent blocks from exceeding the LLM's comfortable working range |
+| **Input** | `long_group_set`, `sorted_groups`, `words` |
+| **Algorithm** | Two steps:<br><br>**① Merge adjacent long groups**: Iterate through sorted groups; consecutive `(gs, ge) ∈ long_group_set` merge into one `block = [(gs,ge), ...]`<br><br>**② Recursively split oversized blocks**: For each merged raw block, if total word count exceeds `max_block_words` (`max_words × 3`, default 90) or total chars exceed `max_block_chars` (`max_chars × 3`, default 360), call `_split_block()` to recursively split at **group boundaries**:<br>  • Even number of groups → split at the middle<br>  • Odd number of groups → try all split points, pick the one minimising `max(left_words, right_words)` (balanced split)<br>  • Single-group blocks → left as-is even if overlength (cannot cut mid-sentence) |
+| **Output** | `blocks`: list of sub-blocks after splitting, each sub-block is a list of one or more contiguous long group ranges |
+| **Function** | [`_split_block()`](../tools/segment.py) |
 
 ```
-Diagram:
+Merge Diagram:
 Groups: [A_short] [B_long] [C_long] [D_short] [E_long] [F_short]
                               ↓
-Blocks:          [B+C]                 [E]
+raw_blocks:        [B+C]                 [E]
           (adjacent long merged)   (isolated long alone)
+
+Split Diagram (when raw block is too large):
+raw block: [B] [C] [D] [E]  ← 4 consecutive long groups, overlength
+                ↓  Even count → split in half
+sub-blocks:  [B+C]        [D+E]
+             (left half)  (right half)
+
+raw block: [B] [C] [D] [E] [F]  ← 5 consecutive long groups, overlength
+                ↓  Odd count → try all splits, pick most balanced
+Candidate: mid=1 → left=1(B)      right=4(C+D+E+F)  max=4
+           mid=2 → left=2(B+C)    right=3(D+E+F)    max=3  ← optimal
+           mid=3 → left=3(B+C+D)  right=2(E+F)      max=3  ← same, pick first
+           mid=4 → left=4(B+C+D+E) right=1(F)       max=4
+                ↓
+sub-blocks:  [B+C]        [D+E+F]
 ```
+
+**`_find_context()` handling for split sub-blocks:** For unsplit blocks, adjacent groups are short groups (used as-is for LLM context). For split sub-blocks, the inner sides are long-group sibling sub-blocks from the same raw block — [`_find_context()`](../tools/segment.py) truncates those adjacent long groups to `max_context_words` words (instead of passing the entire group), giving the LLM boundary context about *what comes next* without overwhelming it with the full content of the next sub-block.
 
 ### Phase 4: LLM Punctuation Infill + Diff Analysis
 
@@ -142,7 +159,7 @@ Blocks:          [B+C]                 [E]
 | **Input** | `blocks`, `words`, short groups (as read-only context) |
 | **Sub-steps** | ① Find nearest short groups as context (left/right) for each block<br>② Call `_llm()` to send to Phi-4, requesting missing commas and sentence-ending punctuation<br>③ `_find_new_breaks()`: char-level diff of original vs LLM output, identify new .?!<br>④ `_find_new_commas()`: same diff approach to find new commas<br>⑤ **Guard filtering**: reject breaks before fragile trailing words (FRAGILE_RE), inside phrasal bigrams, or before intensifier "so"<br>⑥ Inject new commas back into word data |
 | **Output** | `all_breaks`: global set of word indices for breaks (native + newly added) |
-| **Functions** | [`_llm()`](../tools/llm_pipeline.py), [`_find_new_breaks()`](../tools/llm_pipeline.py), [`_find_new_commas()`](../tools/llm_pipeline.py), [`_find_context()`](../tools/llm_pipeline.py) |
+| **Functions** | [`_llm()`](../tools/segment.py), [`_find_new_breaks()`](../tools/seg_diff.py), [`_find_new_commas()`](../tools/seg_diff.py), [`_find_context()`](../tools/segment.py) |
 
 ```
 LLM Prompt (default):
@@ -167,7 +184,7 @@ Diff Analysis Process:
 | **Input** | `all_breaks` (all .?! breaks from Phase 4 + native breaks), `words` |
 | **Algorithm** | Sort all breaks → slice at each break → build `{text, start, end}` segment dicts |
 | **Output** | `segments_with_idx`: list of `(word_start, word_end, segment_dict)` |
-| **Function** | Inline in [`segment()`](../tools/llm_pipeline.py) |
+| **Function** | Inline in [`segment_words()`](../tools/segment.py) |
 
 ### Phase 6: Comma Forced Split
 
@@ -177,7 +194,7 @@ Diff Analysis Process:
 | **Input** | `segments_with_idx` (from Phase 5), `words`, `min_words` (default 4) |
 | **Algorithm** | Right-to-left scan for qualifying commas:<br>• At least `min_words` words on each side of the comma<br>• First word after comma is `CLAUSE_STARTER` (pronoun/conjunction/WH-word) or `ELABORATION_STARTER` (adverb/comparative/determiner)<br>• Not a list comma (`_is_list_comma()` — has and/or on right with no clause signal)<br>• Pick the rightmost qualifying comma → split → recurse on both sub-segments |
 | **Output** | Refined segment list |
-| **Functions** | [`_comma_split()`](../tools/llm_pipeline.py), [`_is_list_comma()`](../tools/llm_pipeline.py) |
+| **Functions** | [`_comma_split()`](../tools/seg_rules.py), [`_is_list_comma()`](../tools/seg_rules.py) |
 
 ```
 Example:
@@ -204,12 +221,12 @@ Skip list comma:
 |-------|-------------|
 | **Purpose** | For segments still overlength after Phase 6, split at coordinating conjunctions that introduce a new clause |
 | **Input** | Phase 6 output, `words`, `min_words` |
-| **Algorithm** | Two-layer structure:<br><br>**Layer 1 (rule-based, no LLM call):**<br>• `but` → always splittable<br>• `so` + `CLAUSE_STARTER` → split (conjunction "so")<br>• `so` + adjective/adverb → **do not** split (intensifier "so", e.g. "so good")<br>• `or` + `CLAUSE_STARTER` → split<br>• `and` + `CLAUSE_STARTER` → split<br><br>**Layer 2 (LLM-assisted):**<br>• `and` + non-`CLAUSE_STARTER` → LLM decides if it connects two complete clauses<br>• Dispatched via `_classify_conjunctions()` as a YES/NO binary question |
+| **Algorithm** | Two-layer structure:<br><br>**Layer 1 (rule-based, no LLM call):**<br>• `but` → always splittable (these are almost always clause-level, subject to the min_words guard)<br>• `so` + `CLAUSE_STARTER` → split (conjunction "so")<br>• `so` + adjective/adverb → **do not** split (intensifier "so", e.g. "so good")<br>• `or` + `CLAUSE_STARTER` → split<br>• `and` + `CLAUSE_STARTER` → split<br><br>**Layer 2 (LLM-assisted):**<br>• `and`/`so`/`or` + non-`CLAUSE_STARTER` (and non-intensifier for "so") → LLM decides if it connects two complete clauses<br>• Dispatched via `_classify_conjunctions()` as a YES/NO binary question |
 | **Output** | Refined segment list |
-| **Functions** | [`_conjunction_split()`](../tools/llm_pipeline.py), [`_classify_conjunctions()`](../tools/llm_pipeline.py), [`_find_ambiguous_conjunctions()`](../tools/llm_pipeline.py), [`_is_so_intensifier_target()`](../tools/llm_pipeline.py) |
+| **Functions** | [`_conjunction_split()`](../tools/seg_rules.py), [`_classify_conjunctions()`](../tools/segment.py), [`_find_ambiguous_conjunctions()`](../tools/seg_rules.py), [`_is_so_intensifier_target()`](../tools/seg_rules.py) |
 
 ```
-Split Decision Tree (for "and" at position i):
+Split Decision Tree (conjunction at position i):
                       ┌───────────────────────────────────────┐
                       │  Conjunction is and/so/or/but?        │
                       └──────────────────┬────────────────────┘
@@ -243,10 +260,10 @@ Split Decision Tree (for "and" at position i):
 |-------|-------------|
 | **Purpose** | For segments that Phase 6+7 could not split, re-send to LLM with a dedicated "split long sentences" prompt |
 | **Input** | Segments still overlength after Phase 7, `words` |
-| **Prompt** | [`_PHASE8_PROMPT`](../tools/llm_pipeline.py): specifically asks to split complete thoughts joined by "and/so/and then", adding periods before sentence-initial conjunctions |
+| **Prompt** | [`_PHASE8_PROMPT`](../tools/segment.py): specifically asks to split complete thoughts joined by "and/so/and then", adding periods before sentence-initial conjunctions |
 | **Algorithm** | ① Call `_llm()` with the dedicated `_PHASE8_PROMPT`<br>② `_find_new_breaks()` to identify new .?! break points<br>③ Recursive single-split: `_pick_break()` selects the most balanced break (minimizing |left-right| word count diff) that passes all guards<br>④ `_split_recursive()` splits both sides recursively until all sub-segments fit or no viable break remains<br><br>**Guards (`_pick_break`):**<br>• FRAGILE_RE: left side of break must not end with a fragile word<br>• Phrasal bigrams: must not break fixed expressions<br>• Conjunction fragment: left side ≤4 words starting with and/but/so/or → rejected<br>• Intensifier "so" check<br>• List enumeration guard: break before and/or with a comma on the left → likely a list, don't split |
 | **Output** | Refined segment list |
-| **Functions** | [`_pick_break()`](../tools/llm_pipeline.py), [`_split_recursive()`](../tools/llm_pipeline.py) |
+| **Functions** | [`_pick_break()`](../tools/segment.py), [`_split_recursive()`](../tools/segment.py) |
 
 ```
 Difference from Phase 4:
@@ -282,7 +299,7 @@ Recursive Split Process:
 | **Conditions** | Candidate fragment: word count ≤ 8 AND starts with `and/but/so/or`, AND preceding segment does not end with .?! |
 | **Algorithm** | ① Collect all candidate fragments `(idx, seg, first_word)`<br>② Call `_classify_conj_merge()`: LLM judges each candidate as CONTINUATION (merge) or NEW_SENTENCE (keep)<br>③ Only merge when LLM confirms CONTINUATION AND the merged result fits within limits |
 | **Output** | Refined segment list |
-| **Function** | [`_classify_conj_merge()`](../tools/llm_pipeline.py) |
+| **Function** | [`_classify_conj_merge()`](../tools/segment.py) |
 
 ```
 Example:
@@ -304,28 +321,17 @@ Hard rule: Preceding segment ends with .?! → never merge (independent sentence
 |-------|-------------|
 | **Purpose** | Last line of defense: force-split any extreme overlength segments that previous phases couldn't handle, without LLM |
 | **Input** | Segments still overlength after Phase 9, `words`, `min_words` |
-| **Conditions** | Word count > `max_words` (30) OR (char count > `max_chars` (120) AND word count > 20) |
-| **Algorithm** | Three rounds:<br><br>**Round 1: Comma split**<br>• Scan all commas, pick the most balanced (minimize |left-right|) that passes list-comma check<br>• Comma word does not count toward either side's word count<br><br>**Round 2: Conjunction/subordinator split**<br>• Coordinating conjunctions (and/but/so/or) + clause subject → splittable, pick most balanced<br>• Subordinators (because/although/since/unless/while/when/where/if/as) → always splittable, pick most balanced<br>• so/or/and without clause subject → don't split here (reserved for LLM phases)<br><br>**Round 3: Force midpoint split**<br>• `mid = n // 2`, split at the exact midpoint<br>• Recurse on both sides until all segments fit limits |
+| **Conditions** | Word count > `max_words` (30) OR char count > `max_chars` (120) |
+| **Algorithm** | Three rounds:<br><br>**Round 1: Comma split**<br>• Scan all commas, pick the most balanced (minimise left-right word count difference) that passes list-comma check<br>• Comma word does not count toward either side's word count<br><br>**Round 2: Conjunction/subordinator split**<br>• `but` → always splittable, pick most balanced<br>• `so`/`or` + `CLAUSE_STARTER` → splittable, pick most balanced<br>• `so`/`or` without clause subject → don't split here<br>• `and` → always splittable even without CLAUSE_STARTER (better than forced mid-split that could land after a fragile trailing word), pick most balanced<br>• Subordinators (because/although/since/unless/while/when/where/if/as) → always splittable, pick most balanced<br><br>**Round 3: Force midpoint split**<br>• `mid = n // 2`, scan outward from center to find the safest split point that does not leave a FRAGILE_RE word (article, preposition, etc.) on the left side<br>• If no safe point found, fall back to exact midpoint<br>• Recurse on both sides until all segments fit limits |
 | **Output** | Final segment list (end of the segmentation pipeline) |
-| **Functions** | [`_phase10_split()`](../tools/llm_pipeline.py), [`_phase10_within_limits()`](../tools/llm_pipeline.py) |
-
-## LLM Call Summary
-
-| Phase | LLM Call | Prompt | Temp | Purpose |
-|-------|----------|--------|------|---------|
-| 4 | ✅ Once per block | Generic punctuation fix (with context) | 0 | Add missing sentence-ending punctuation and commas |
-| 7 | ⚠️ Only for ambiguous and/or | "YES/NO" binary classification | 0 | Decide if conjunction connects two clauses |
-| 8 | ✅ Once per overlength segment | Dedicated run-on split prompt | 0 | Force-split run-on sentences |
-| 9 | ✅ Once per batch of candidates | "CONTINUATION/NEW_SENTENCE" binary | 0 | Decide if conjunction fragment should merge back |
-
-> **Note**: Phase 7 and 9 LLM calls are **conditional** — only triggered when ambiguous conjunctions or fragments exist. Phases 4 and 8 always call the LLM.
+| **Functions** | [`_phase10_split()`](../tools/segment.py), [`_phase10_within_limits()`](../tools/segment.py) |
 
 ## Key Guard Mechanisms
 
 | Guard Name | Affected Phases | Purpose |
 |------------|----------------|---------|
 | **FRAGILE_RE** | 4, 8 | Reject break after fragile trailing words (articles, prepositions, auxiliary verbs, modals, etc.) |
-| **Phrasal Bigrams** | 4, 8 | Don't break ~5,700 fixed expressions (e.g. "such as", "going to", "just so") |
+| **Phrasal Bigrams** | 4, 7, 8 | Don't break ~5,700 fixed expressions (e.g. "such as", "going to", "just so") |
 | **List Comma Check** | 6, 10 | Don't split at list commas ("a, b and c") |
 | **Intensifier "so"** | 4, 7, 8 | Don't split before intensifier "so" ("so good" — adverb of degree); only split before conjunction "so" ("so I" — causal) |
 | **Conjunction Fragment Guard** | 8 | Reject creating parasitic fragments ≤4 words starting with a conjunction |
