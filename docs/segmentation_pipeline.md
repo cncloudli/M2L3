@@ -157,7 +157,7 @@ sub-blocks:  [B+C]        [D+E+F]
 |-------|-------------|
 | **Purpose** | For each block, call LLM to add missing punctuation, then find new breaks via character diff analysis |
 | **Input** | `blocks`, `words`, short groups (as read-only context) |
-| **Sub-steps** | ① Find nearest short groups as context (left/right) for each block<br>② Call `_llm()` to send to Phi-4, requesting missing commas and sentence-ending punctuation<br>③ `_find_new_breaks()`: char-level diff of original vs LLM output, identify new .?!<br>④ `_find_new_commas()`: same diff approach to find new commas<br>⑤ **Guard filtering**: reject breaks before fragile trailing words (FRAGILE_RE), inside phrasal bigrams, or before intensifier "so"<br>⑥ Inject new commas back into word data |
+| **Sub-steps** | ① Find nearest short groups as context (left/right) for each block<br>② Call `_llm()` to send to the LLM, requesting missing commas and sentence-ending punctuation<br>③ `_find_new_breaks()`: char-level diff of original vs LLM output, identify new .?!<br>④ `_find_new_commas()`: same diff approach to find new commas<br>⑤ **Guard filtering**: reject breaks before fragile trailing words (FRAGILE_RE), inside phrasal bigrams, or before intensifier "so"<br>⑥ Inject new commas back into word data |
 | **Output** | `all_breaks`: global set of word indices for breaks (native + newly added) |
 | **Functions** | [`_llm()`](../tools/segment.py), [`_find_new_breaks()`](../tools/seg_diff.py), [`_find_new_commas()`](../tools/seg_diff.py), [`_find_context()`](../tools/segment.py) |
 
@@ -192,7 +192,7 @@ Diff Analysis Process:
 |-------|-------------|
 | **Purpose** | For segments still overlength, split at clause-internal commas (not list commas) |
 | **Input** | `segments_with_idx` (from Phase 5), `words`, `min_words` (default 4) |
-| **Algorithm** | Right-to-left scan for qualifying commas:<br>• At least `min_words` words on each side of the comma<br>• First word after comma is `CLAUSE_STARTER` (pronoun/conjunction/WH-word) or `ELABORATION_STARTER` (adverb/comparative/determiner)<br>• Not a list comma (`_is_list_comma()` — has and/or on right with no clause signal)<br>• Pick the rightmost qualifying comma → split → recurse on both sub-segments |
+| **Algorithm** | Right-to-left scan for qualifying commas:<br>• At least `min_words` words on each side of the comma (the comma word itself is not counted toward either side)<br>• First word after comma is `CLAUSE_STARTER` (pronoun/conjunction/WH-word) or `ELABORATION_STARTER` (adverb/comparative/determiner)<br>• Not a list comma (`_is_list_comma()` — has and/or on right with no clause signal)<br>• Pick the rightmost qualifying comma → split → recurse on both sub-segments |
 | **Output** | Refined segment list |
 | **Functions** | [`_comma_split()`](../tools/seg_rules.py), [`_is_list_comma()`](../tools/seg_rules.py) |
 

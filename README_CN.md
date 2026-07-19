@@ -1,10 +1,10 @@
-# 基于多层LLM的字幕切分工具 
+# 基于多层LLM的字幕切分工具
 **(Multi-Layer LLM-Based Subtitle Segmentation / M2L3)**
 
 集成英语转录 + 字幕切分 + 翻译的一站式字幕生成工具，所有处理流程支持**完全离线运行**
 
 | 功能 | 方案 | 使用场景 |
-| ------ | ------ | ---------- |
+|------|------|----------|
 | **语音识别 (ASR)** | WhisperX (faster-whisper-large-v3) + Silero VAD | 转录 (scripts/transcribe.py) |
 | **对齐 (Alignment)** | Wav2Vec2 音素级强制对齐 | 转录 (scripts/transcribe.py) |
 | **切分 (Segment)** | 通过 llama-server 调用 本地 LLM 或使用在线 API | 转录 (scripts/transcribe.py) |
@@ -199,7 +199,56 @@ python batch.py -translate true
 
 ## 使用说明
 
-### 1. `scripts/transcribe.py` — 转录流水线
+### 1. LLM 后端与共享配置
+
+**转录切分**（`scripts/transcribe.py`）和**翻译引擎**（`scripts/translate.py`）共用同一套 LLM 调用层。支持的后端：
+
+| 后端 | API 格式 | 默认模型 | 认证方式 |
+|------|----------|---------|---------|
+| `local` | llama-server 子进程 | `phi4` | — |
+| `deepseek` | 自动检测：OpenAI `/chat/completions` **或** Anthropic Messages | `deepseek-v4-flash` | `openai_api_key` |
+| `openai` | OpenAI 兼容 | `gpt-5.6-terra` | `openai_api_key` |
+| `qwen` | OpenAI 兼容 | `qwen3.5-plus` | `openai_api_key` |
+| `gemini` | OpenAI 兼容 | `gemini-3.5-flash` | `openai_api_key` |
+| `anthropic` | Anthropic Messages | `claude-opus-4-8` | `anthropic_api_key` |
+
+**API 密钥和自定义 base URL** 在 [translate_config.json](translate_config.json) 中配置：
+
+```json
+{
+    "target_lang": "Chinese",
+    "target_lang_code": "CN",
+    "source_lang": "English",
+    "add_punctuation": false,
+    "allow_flexible_word_order": false,
+    "allow_simplify_wording": false,
+    "number_mode": "auto",
+    "space_between_cjk_and_latin": "auto",
+    "glossary": ["EXAMPLE1", "EXAMPLE2", "VRAM", "CUDA"],
+    "custom_system_prompt": null,
+    "cache_prompt": false,
+    "drift_threshold": false,
+    "openai_api_key": "",
+    "anthropic_api_key": "",
+    "api_base_url": ""
+}
+```
+
+API 密钥字段（`openai_api_key`、`anthropic_api_key`、`api_base_url`）是**共享的**——同时作用于切分后端和翻译后端。翻译专用字段（`target_lang`、`target_lang_code` 等）详见 [transcription_n_translation_CN.md](docs/transcription_n_translation_CN.md) - "3.1 翻译配置"。
+
+或使用 `.env` 文件设置 API 密钥（路径：项目根目录 `.env`）：**仅当 `translate_config.json` 中的密钥字段为空时生效**
+
+```ini
+# ── LLM 后端 API 密钥（切分与翻译共用） ──
+
+OPENAI_API_KEY=sk-your-key-here
+
+# Anthropic 专用（仅后端为 anthropic 时需要）
+ANTHROPIC_API_KEY=sk-ant-your-key-here
+
+```
+
+### 2. `scripts/transcribe.py` — 转录流水线
 
 ```powershell
 python scripts/transcribe.py -i <输入文件> [选项]
@@ -216,7 +265,7 @@ python scripts/transcribe.py -i <输入文件> [选项]
 | `-o, --output <path>` | `output/<stem>.srt` | 输出 SRT 文件路径 |
 | `-gpu-layers <N>` | 自动检测 | LLM 使用的 GPU 层数（0 = 仅 CPU） |
 | `-no-cache` | — | 跳过词级 `.json` 缓存 |
-| `-seg_backend <name>` | `local` | 切分后端（`local`、`deepseek`、`openai`、`qwen`、`gemini`、`anthropic`） |
+| `-seg_backend <name>` | `local` | 切分后端。可选项见 [1. LLM 后端与共享配置](#1-llm-后端与共享配置)。 |
 | `-seg_model <name>` | 各后端默认 | 切分用模型（如 `phi4`、`gpt-5.6-terra`；默认取决于后端） |
 
 #### 流水线
@@ -266,7 +315,7 @@ python scripts/transcribe.py -i input/input.mp4 -no-cache
 
 ---
 
-### 2. `scripts/translate.py` — 语言翻译
+### 3. `scripts/translate.py` — 翻译流水线
 
 使用**本地 LLM**（通过 llama-server 调用）或**5 种在线 API 后端**翻译 SRT（保留时间码）或纯文本 TXT 文件。
 自动检测输入格式——SRT 文件保留时间码，TXT 文件按纯文本行处理。
@@ -283,66 +332,18 @@ python scripts/translate.py -i <input> [选项]
 
 #### 参数
 
-| 参数 | 默认值 | 描述 |
-|------|--------|------|
-| `-i, --input <path>` | **（必需）** | 输入 `.srt` 或 `.txt` 文件（按内容自动检测格式） |
-| `-o, --output <path>` | 自动 | 输出文件路径 |
-| `-tgt-lang <name>` | `Chinese` | 目标语言名称 |
-| `-tgt-lang-code <code>` | `CN` | 用于文件名后缀的语言代码 |
-| `-src-lang <name>` | `English` | 源语言名称 |
-| `-transl_backend <name>` | `local` | 翻译后端（`local`、`deepseek`、`openai`、`qwen`、`gemini`、`anthropic`） |
-| `-transl_model <name>` | 各后端默认 | 所选后端对应的模型名称 |
-| `-gpu-layers <N>` | 自动检测 | GPU 层数（仅本地后端） |
-| `-mode <name>` | `accurate` | 翻译模式：`accurate`（每次 2 行）+ `flexible`（每次 4 行，含时间码） |
-| `-local_model <name>` | `phi4` | 本地模型名（`-transl_backend local` 且未指定 `-transl_model` 时生效） |
-
-#### 翻译后端
-
-| 后端 | API 格式 | 默认模型 | 认证方式 |
-|------|----------|---------|---------|
-| `local` | llama-server 子进程 | `phi4` | — |
-| `deepseek` | 自动检测：OpenAI `/chat/completions` **或** Anthropic Messages | `deepseek-v4-flash` | `openai_api_key` |
-| `openai` | OpenAI 兼容 | `gpt-5.6-terra` | `openai_api_key` |
-| `qwen` | OpenAI 兼容 | `qwen3.5-plus` | `openai_api_key` |
-| `gemini` | OpenAI 兼容 | `gemini-3.5-flash` | `openai_api_key` |
-| `anthropic` | Anthropic Messages | `claude-opus-4-8` | `anthropic_api_key` |
-
-#### 用户配置
-
-编辑项目根目录下的 [translate_config.json](translate_config.json)：
-
-```json
-{
-    "target_lang": "Chinese",
-    "target_lang_code": "CN",
-    "source_lang": "English",
-    "add_punctuation": false,
-    "allow_flexible_word_order": false,
-    "allow_simplify_wording": false,
-    "number_mode": "auto",
-    "space_between_cjk_and_latin": false,
-    "glossary": ["EXAMPLE1", "EXAMPLE2", "VRAM", "CUDA"],
-    "custom_system_prompt": null,
-    "cache_prompt": false,
-    "drift_threshold": false,
-    "openai_api_key": "",
-    "anthropic_api_key": "",
-    "api_base_url": ""
-}
-```
-各字段的作用详见 [transcription_n_translation_CN.md](docs/transcription_n_translation_CN.md) - "3.1 翻译配置"
-
-或使用 `.env` 文件设置 API 密钥（路径：项目根目录 `.env`）：**仅当 `translate_config.json` 中的密钥字段为空时生效**
-
-```ini
-# ── 翻译后端 API 密钥（与 translate_config.json 中的字段对应） ──
-
-OPENAI_API_KEY=sk-your-key-here
-
-# Anthropic 专用（仅后端为 anthropic 时需要）
-ANTHROPIC_API_KEY=sk-ant-your-key-here
-
-```
+| 参数 | 默认值 | 描述                                                                               |
+|------|--------|----------------------------------------------------------------------------------|
+| `-i, --input <path>` | **（必需）** | 输入 `.srt` 或 `.txt` 文件（按内容自动检测格式）                                                 |
+| `-o, --output <path>` | 自动 | 输出文件路径                                                                           |
+| `-tgt_lang <name>` | `Chinese` | 目标语言名称。覆盖 translate_config.json 中的 `target_lang`。省略时自动补全 `-tgt_lang_code`。       |
+| `-tgt_lang_code <code>` | `CN` | 用于文件名后缀的语言代码。覆盖 translate_config.json 中的 `target_lang_code`。省略时自动补全 `-tgt_lang`。 |
+| `-src_lang <name>` | `English` | 源语言名称。覆盖 translate_config.json 中的 `source_lang`。                                 |
+| `-transl_backend <name>` | `local` | 翻译后端。可选项同 scripts/transcribe.py。                                                 |
+| `-transl_model <name>` | 各后端默认 | 所选后端对应的模型名称，可选项同 scripts/transcribe.py。                                                                     |
+| `-gpu-layers <N>` | 自动检测 | GPU 层数（仅本地后端）                                                                    |
+| `-mode <name>` | `accurate` | 翻译模式：`accurate`（每次 2 行）+ `flexible`（每次 4 行，含时间码）                                 |
+| `-local_model <name>` | `phi4` | 本地模型名（`-transl_backend local` 且未指定 `-transl_model` 时生效）                          |
 
 
 #### 示例
@@ -362,18 +363,18 @@ python scripts/translate.py -i output/input.srt -transl_backend openai -transl_m
 python scripts/translate.py -i output/input.srt -transl_backend anthropic -transl_model claude-opus-4-8
 
 # 使用 DeepSeek（flexible 模式）翻译为日语
-python scripts/translate.py -i output/input.txt -transl_backend deepseek -tgt-lang Japanese -tgt-lang-code JP -mode flexible
+python scripts/translate.py -i output/input.txt -transl_backend deepseek -tgt_lang Japanese -tgt_lang_code JP -mode flexible
 
 # 自定义输出路径
 python scripts/translate.py -i output/input.txt -o D:/output/lecture_JP.srt
 
 # 指定源语言
-python scripts/translate.py -i output/input.txt -src-lang English -tgt-lang Chinese
+python scripts/translate.py -i output/input.txt -src_lang English -tgt_lang Chinese
 ```
 
 ---
 
-### 3. `main.py` — 编排入口（转写 + 翻译）
+### 4. `main.py` — 编排入口（转写 + 翻译）
 
 ```powershell
 python main.py -i <输入文件> [选项]
@@ -394,17 +395,17 @@ python main.py -i <输入文件> [选项]
 | 参数 | 默认值 | 描述 |
 |------|--------|------|
 | `-i, --input <path>` | `input/input.mp4` | 输入文件（转写：音视频；纯翻译：`.srt`/`.txt`） |
-| `-o, --output <path>` | `output/<stem>.srt` | 输出 SRT 文件路径 |
+| `-o, --output <path>` | `output/<stem>.srt` | 同 scripts/transcribe.py |
 | `-transcribe` | `true` | 启用转写（`true`/`false`） |
 | `-translate` | `false` | 启用翻译（`true`/`false`） |
-| `-seg_backend <name>` | `local` | 切分后端（`local`、`deepseek`、`openai`、`qwen`、`gemini`、`anthropic`） |
-| `-seg_model <name>` | 各后端默认 | 切分用模型（如 `phi4`、`gpt-5.6-terra`） |
-| `-transl_backend <name>` | `local` | 翻译后端（同上） |
-| `-transl_model <name>` | 各后端默认 | 翻译用模型 |
-| `-mode <name>` | `accurate` | 翻译模式：`accurate` 或 `flexible`（仅当 `-translate true` 时有效） |
-| `-local_model <name>` | `phi4` | 本地模型的缺省值（可被 `-seg_model`/`-transl_model` 单独覆盖） |
-| `-gpu-layers <N>` | 自动检测 | LLM 使用的 GPU 层数（0 = 仅 CPU） |
-| `-no-cache` | — | 跳过词级 `.json` 缓存 |
+| `-seg_backend <name>` | `local` | 同 scripts/transcribe.py |
+| `-seg_model <name>` | 各后端默认 | 同 scripts/transcribe.py |
+| `-transl_backend <name>` | `local` | 同 scripts/translate.py |
+| `-transl_model <name>` | 各后端默认 | 同 scripts/translate.py |
+| `-mode <name>` | `accurate` | 同 scripts/translate.py |
+| `-local_model <name>` | `phi4` | 同 scripts/translate.py |
+| `-gpu-layers <N>` | 自动检测 | 同 scripts/transcribe.py |
+| `-no-cache` | — | 同 scripts/transcribe.py |
 
 > **注意：** `-mode` 要求 `-translate true`。无翻译时传入 `-mode` 会报错退出。
 
@@ -429,7 +430,7 @@ python main.py -i input/input.mp4 -translate true -seg_backend local -seg_model 
 
 ---
 
-### 4. `batch.py` — 批处理
+### 5. `batch.py` — 批处理
 
 处理文件夹中的所有文件，每个文件在独立的子进程中运行（每个文件拥有独立的 CUDA 上下文——文件间无 VRAM 泄漏）。
 
@@ -441,20 +442,20 @@ python batch.py [选项]
 
 #### 参数
 
-| 参数 | 默认值 | 描述 |
-|------|--------|------|
-| `-i, --input <dir>` | `input/` | 输入文件夹 |
-| `-o, --output <dir>` | `output/` | 输出文件夹 |
-| `-ext <ext>` | `.mp4` | 要搜索的文件扩展名（如 `.mp3`、`.wav`、`.mkv`） |
-| `-gpu-layers <N>` | 自动检测 | LLM 使用的 GPU 层数（0 = 仅 CPU） |
-| `-no-cache` | — | 跳过词级缓存 |
-| `-transcribe` | `true` | 启用转写（`true`/`false`） |
-| `-translate` | `false` | 每个文件转写后自动翻译（`true`/`false`） |
-| `-seg_backend <name>` | `local` | 切分后端（`local`、`deepseek`、`openai`、`qwen`、`gemini`、`anthropic`） |
-| `-seg_model <name>` | 各后端默认 | 切分用模型 |
-| `-transl_backend <name>` | `local` | 翻译后端（同上） |
-| `-transl_model <name>` | 各后端默认 | 翻译用模型 |
-| `-mode <name>` | `accurate` | 翻译模式：`accurate` 或 `flexible`（仅当 `-translate true` 时有效） |
+| 参数 | 默认值 | 描述                             |
+|------|--------|--------------------------------|
+| `-i, --input <dir>` | `input/` | 输入文件夹                          |
+| `-o, --output <dir>` | `output/` | 输出文件夹                          |
+| `-ext <ext>` | `.mp4` / `.srt` / `.txt` | 要搜索的文件扩展名（如 `.mp3`、`.wav`、`.mkv`）。transcribe 模式默认 `.mp4`，translate-only 模式默认 `.srt` 和 `.txt`。 |
+| `-transcribe` | `true` | 同 main.py                      |
+| `-translate` | `false` | 同 main.py                      |
+| `-seg_backend <name>` | `local` | 同 scripts/transcribe.py        |
+| `-seg_model <name>` | 各后端默认 | 同 scripts/transcribe.py        |
+| `-transl_backend <name>` | `local` | 同 scripts/translate.py         |
+| `-transl_model <name>` | 各后端默认 | 同 scripts/translate.py         |
+| `-mode <name>` | `accurate` | 同 scripts/translate.py         |
+| `-gpu-layers <N>` | 自动检测 | 同 scripts/transcribe.py        |
+| `-no-cache` | — | 同 scripts/transcribe.py        |
 
 #### 示例
 

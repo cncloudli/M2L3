@@ -49,9 +49,9 @@ Performance data was collected across two independent test runs on this hardware
 This section covers the LLM models available for the two LLM-powered tasks in the pipeline:
 
 - **Segmentation** — a 10-phase LLM refinement pipeline that splits raw transcription into subtitle segments (see [segmentation_pipeline.md](segmentation_pipeline.md))
-- **Translation** — a sliding-window translation engine that translates SRT/TXT files while preserving timecodes (see [transcription_n_translation.md](transcription_n_translation.md) - "Translation Pipeline")
+- **Translation** — a sliding-window translation engine that translates SRT/TXT files while preserving timecodes (see [transcription_n_translation.md](transcription_n_translation.md) - "3. Translation Pipeline")
 
-> The smaller, non-LLM models — **faster-whisper-large-v3** (ASR), **Silero VAD** (voice activity detection), and **Wav2Vec2** (phoneme alignment) — are documented in [transcription_n_translation.md](transcription_n_translation.md) - "Transcription Pipeline".
+> The smaller, non-LLM models — **faster-whisper-large-v3** (ASR), **Silero VAD** (voice activity detection), and **Wav2Vec2** (phoneme alignment) — are documented in [transcription_n_translation.md](transcription_n_translation.md) - "2. Transcription Pipeline".
 
 ### 2.1 Local Models
 
@@ -96,7 +96,7 @@ Segmentation runs the full ASR → alignment → LLM refinement pipeline to spli
 **Destructive split rate**: `destructive_splits / total_segments`  
 A *destructive split* cuts a sentence at a non-grammatical boundary, producing a subject-verb fragment or a mid-phrase break. Splits at natural conjunction/clause boundaries are counted as correct.
 
-| Model | Time | Segments | Destructive Splits¹ |
+| Model | Time | Segments | Destructive Splits |
 | :---- | :---: | :-------: | :------------------: |
 | Phi-4 14B (Q4_K_M) | 202.0s | 199 | 3 (1.5%) |
 | Ministral-3-8B-Instruct 8B (Q8_0) | 195.6s | 200 | 3 (1.5%) |

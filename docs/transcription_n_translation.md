@@ -99,7 +99,7 @@ r = requests.post(
 
 > **Note:** `temperature` defaults to `0`; consumers pass their own value at call time. `n_predict` falls back to `max(64, len(user) // 4 + 30)` when `max_tokens` is unspecified, but consumers such as the translation engine always pass an explicit value.
 >
-> **Note (thinking suppression):** When using a reasoning model (a model in `_REASONING_MODELS`, currently only `qwen3.5-9b`), [`LLMCallLocal.chat()`](../tools/llm_call.py) automatically appends a thinking/chain-of-thought suppression instruction to the system prompt **before** template wrapping. This mirrors the API-level `body["thinking"] = {"type": "disabled"}` used for online backends (see §1.3.1), but works at the prompt level since the `/completion` endpoint has no API parameter for thinking control. The same model list also drives `strip_reasoning()` post-processing (see §3.3.4).
+> **Note (thinking suppression):** When using a reasoning model (a model in `_REASONING_MODELS`, currently only `qwen3.5-9b`), [`LLMCallLocal.chat()`](../tools/llm_call.py) automatically appends a thinking/chain-of-thought suppression instruction to the system prompt **before** template wrapping. This mirrors the API-level `body["thinking"] = {"type": "disabled"}` used for online backends (see [1.3.1 OpenAI-Compatible Backend](#131-openai-compatible-backend-llmcallopenai)), but works at the prompt level since the `/completion` endpoint has no API parameter for thinking control. The same model list also drives `strip_reasoning()` post-processing (see [3.3.4 LLM Call](#334-llm-call)).
 
 **Stop** — [`LLMCallLocal.stop()`](../tools/llm_call.py): Four-level shutdown:
 1. `proc.terminate()` + 5s wait
@@ -330,7 +330,7 @@ model = whisperx.load_model(
 
 **Design Rationale:**
 
-- **Silero VAD** replaces Whisper's built-in VAD. Silero is a lightweight (~5 MB) PyTorch model that slides a window over audio to detect voice activity. WhisperX splits VAD-detected speech segments into chunks and feeds each independently to Whisper, yielding more precise results than processing the entire audio at once.
+- **Silero VAD** replaces Whisper's built-in VAD. Silero is a lightweight (~35 MB) PyTorch model that slides a window over audio to detect voice activity. WhisperX splits VAD-detected speech segments into chunks and feeds each independently to Whisper, yielding more precise results than processing the entire audio at once.
 - **`word_timestamps=False`** — Whisper can output word-level timestamps natively, but accuracy is poor (typically off by hundreds of milliseconds). The project disables built-in timestamps and uses Wav2Vec2 for dedicated forced alignment to achieve phoneme-level precision.
 - **`condition_on_previous_text=False`** — Each decoding chunk is processed independently, preventing errors from propagating backward from earlier segments.
 
@@ -390,19 +390,7 @@ Benefits:
 
 ### 2.5 Segmentation
 
-After timestamp post-processing, the word list undergoes LLM-based segmentation to group words into subtitle segments. The segmentation pipeline implements a 10-phase algorithm that combines rule-based and LLM-driven splitting (using the same `LLMCall` layer described in §1):
-
-```
-Phases 1-4:  LLM punctuation infill — detect sentence boundaries
-Phase 5:     Build segments from all accumulated break points
-Phase 6:     Comma forced split — split at clause commas
-Phase 7:     Conjunction split — rule-based + LLM classifier
-Phase 8:     LLM run-on repunctuation — recursive split
-Phase 9:     LLM-guided conjunction-fragment merge
-Phase 10:    Emergency split — last resort rule-based
-```
-
-See [segmentation_pipeline.md](segmentation_pipeline.md) for the full algorithm description, guard mechanisms, and parameter details.
+After timestamp post-processing, the word list undergoes LLM-based segmentation to group words into subtitle segments. The complete segmentation algorithm description, guard mechanisms, and parameter details are documented in [segmentation_pipeline.md](segmentation_pipeline.md).
 
 Usage parameters (`-seg_backend`, `-seg_model`, `-gpu-layers`) are covered in the README.
 
@@ -440,20 +428,20 @@ This saves minutes per run when debugging segmentation parameters without re-run
 
 | Field | Type | Default | Description |
 | ----- | ---- | ------- | ----------- |
-| `target_lang` | string | `"Chinese"` | Target language name (used in LLM prompts) |
-| `target_lang_code` | string | `"CN"` | Target language code (used in output filename suffix, e.g. `_CN.srt`) |
-| `source_lang` | string | `"English"` | Source language name (used in LLM prompts) |
+| `target_lang` | string | `"Chinese"` | Target language name (used in LLM prompts). Lower priority than CLI `-tgt_lang`. |
+| `target_lang_code` | string | `"CN"` | Target language code (used in output filename suffix, e.g. `_CN.srt`). Lower priority than CLI `-tgt_lang_code`. |
+| `source_lang` | string | `"English"` | Source language name (used in LLM prompts). Lower priority than CLI `-src_lang`. |
 | `add_punctuation` | bool | `false` | Whether to add sentence-ending punctuation to translations. When `false`, punctuation is stripped by post-processing. |
 | `allow_flexible_word_order` | bool | `false` | Whether to allow cross-line word reordering. **Only effective in `flexible` mode** — not passed to the LLM in `accurate` mode (line-by-line locked). Strongly recommended **for online API backends only** — may cause unstable line index shifts with local models. |
 | `allow_simplify_wording` | bool | `false` | Whether to allow simplifying colloquial expressions. **Only effective in `flexible` mode** — not passed to the LLM in `accurate` mode. Strongly recommended **for online API backends only** — local models have limited ability to follow this instruction reliably. |
 | `number_mode` | string | `"auto"` | Number format control. Options: `"auto"` (no special handling), `"src_lang"` (preserve original number formatting), `"digits"` (all numbers use Arabic digits), `"tgt_lang"` (numbers converted to target language native form). Available in all modes; local models may not always follow this instruction reliably due to performance limitations. |
-| `space_between_cjk_and_latin` | bool | `false` | Whether to auto-insert spaces between CJK and Latin characters. Only affects output formatting. |
+| `space_between_cjk_and_latin` | bool / string | `"auto"` | CJK-Latin spacing control. `true`: insert spaces; `false`: strip spaces (override LLM habits); `"auto"`: leave LLM output unchanged. Only affects output formatting. |
 | `glossary` | array | `["EXAMPLE1", ...]` | Glossary terms — these words **must not** be translated and must be kept as-is. Available in all modes; local models may not always follow this instruction reliably due to performance limitations. |
 | `custom_system_prompt` | string or null | `null` | Custom system prompt override. When non-null, fully replaces the auto-built system prompt. |
 | `cache_prompt` | bool | `false` | Whether to enable LLM KV-cache reuse. Reduces latency on API backends; may cause instruction drift in local models during long tasks — keep `false` for local. Mode-independent. |
 | `drift_threshold` | number or bool | `false` | Content drift detection threshold. `false` skips detection entirely (zero extra computation); a number (e.g. `0.16`) enables detection — when the character-set similarity gap between adjacent translations and their sources exceeds this value, content drift is flagged and single-line re-translation is triggered. Lower values are more sensitive. |
 
-API credential fields (`openai_api_key`, `anthropic_api_key`, `api_base_url`) are documented in §1.5 Shared Configuration.
+API credential fields (`openai_api_key`, `anthropic_api_key`, `api_base_url`) are documented in [1.5 Shared Configuration](#15-shared-configuration).
 
 ### 3.2 Input Parsing
 
@@ -502,7 +490,7 @@ def _build_window_user_prompt(ctx_lines, tr_start_idx, tr_end_idx, show_timecode
 
 Context-only lines are prefixed with `(BEFORE)` / `(AFTER)`. The translate section numbers its lines **from 1** as `1`, `2`, etc. (bare numbers), with the header instructing the LLM to output `[1]`, `[2]` format.
 
-The model-specific template wrapping (Phi-4 / Qwen / Ministral) is handled by the LLM call layer itself — see §1.4 Prompt Template Formatting.
+The model-specific template wrapping (Phi-4 / Qwen / Ministral) is handled by the LLM call layer itself — see [1.4 Prompt Template Formatting](#14-prompt-template-formatting).
 
 #### 3.3.4 LLM Call
 
@@ -520,7 +508,7 @@ if response:
 
 **Parameters:**
 
-- **`temperature=0.1`** — Low temperature produces stable, consistent translation output. The segmentation engine uses a similar temperature, but the translation engine deliberately keeps it low to prevent hallucination that could shift line indices.
+- **`temperature=0.1`** — Low temperature produces stable, consistent translation output. The segmentation engine uses `temperature=0`, while the translation engine uses `temperature=0.1` — deliberately kept low to prevent hallucination that could shift line indices.
 - **`max_tokens=get_min_tokens(model, len(user))`** — Dynamic prediction length. `get_min_tokens()` calculates an appropriate output token limit based on the model and input length, preventing truncation while avoiding wasteful over-allocation.
 - **`cache_prompt=CACHE_PROMPT`** — Whether to enable KV-cache reuse (controlled by `cache_prompt` in `translate_config.json`). Reduces latency on API backends; may cause instruction drift in local models during long tasks — keep `false` for local.
 - **`strip_reasoning(response)`** — Strips thinking chain preamble. Handles three XML-style thought tags (`<think>`, `<reason>`, `<reasoning>`) as well as prose reasoning preamble before the first structured `[N]` line. Note that DeepSeek's default thinking mode is disabled at the API request layer (`body["thinking"] = {"type": "disabled"}`), not stripped post-hoc. Currently `_REASONING_MODELS` contains only `"qwen3.5-9b"`, whose thinking output is processed by `strip_reasoning()`.
@@ -564,7 +552,7 @@ Raw LLM output
   ├─ 2. [_strip_end_punct()](../scripts/translate.py)       — If add_punct=False, strip sentence-ending punctuation
   ├─ 3. [_normalize_commas()](../scripts/translate.py)      — For CJK languages, replace , with ，
   ├─ 4. [_normalize_quotes()](../scripts/translate.py)      — Replace quotes in CJK content with ""
-  └─ 5. [_add_cjk_latin_spacing()](../scripts/translate.py) — Insert spaces between CJK and Latin characters
+  └─ 5. [_add_cjk_latin_spacing()](../scripts/translate.py) — Insert / strip / keep spaces between CJK and Latin characters
 ```
 
 **Punctuation stripping** [`_strip_end_punct()`](../scripts/translate.py): When `add_punct=False`, removes sentence-ending punctuation using `rstrip("。？！.!?")`. The benefit of this approach is that it doesn't impose punctuation constraints on the LLM during generation — translation quality is unaffected, and the user gets punctuation-free output through post-processing.
@@ -643,13 +631,11 @@ Controlled via the `drift_threshold` field in `translate_config.json`:
 | `false` | Detection skipped entirely (default), no similarity computation        |
 | `0.16`  | Detection enabled, `gap > 0.16` triggers drift flagging                |
 
-The threshold of 0.16 was determined empirically: known drift cases have `gap` values between 0.167–0.385, while Phi-4 shows no drift behaviour in `accurate` mode. Different models may have different drift characteristics — adjust based on actual output.
-
 ### 3.7 CJK Per-Line Post-Processing
 
-[`_translate_impl()`](../scripts/translate.py) performs a third post-processing pass after overflow merge protection and content drift detection — per-line CJK detection and fix. This catches individual lines that passed the window-level CJK check (Section 3.3.6) because their window-mate contained CJK characters, but are themselves still in English.
+[`_translate_impl()`](../scripts/translate.py) performs a third post-processing pass after overflow merge protection and content drift detection — per-line CJK detection and fix. This catches individual lines that passed the window-level CJK check ([Section 3.3.6 CJK Window-Level Auto-Retry](#336-cjk-window-level-auto-retry)) because their window-mate contained CJK characters, but are themselves still in English.
 
-**Trigger condition:** The window-level CJK check (3.3.6) only verifies that at least ONE line in the window contains CJK characters. When a window has mixed CJK and non-CJK lines, the window passes, but lines where the LLM echoed English source text or the original was preserved go unnoticed at the window level.
+**Trigger condition:** The window-level CJK check ([3.3.6 CJK Window-Level Auto-Retry](#336-cjk-window-level-auto-retry)) only verifies that at least ONE line in the window contains CJK characters. When a window has mixed CJK and non-CJK lines, the window passes, but lines where the LLM echoed English source text or the original was preserved go unnoticed at the window level.
 
 **Detection:** Scans all result lines, flagging those that simultaneously satisfy:
 1. Translation result is not `None`

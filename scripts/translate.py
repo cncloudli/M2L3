@@ -11,7 +11,7 @@ Standalone usage:
   python scripts/translate.py -i output/input.txt          # → output/input_CN.txt + .srt
   python scripts/translate.py -i output/input.srt          # preserves SRT timecodes
   python scripts/translate.py -i output/input.txt -o output/my_trans.srt
-  python scripts/translate.py -i output/input.txt -tgt-lang Japanese -tgt-lang-code JP
+  python scripts/translate.py -i output/input.txt -tgt_lang Japanese -tgt_lang_code JP
 
 ══════════════════════════════════════════════════════════════════════════════
   USER CONFIGURATION  —  edit ``translate_config.json`` in the project root to customise behaviour.
@@ -59,7 +59,7 @@ def _load_translation_config():
         "allow_flexible_word_order": False,
         "allow_simplify_wording": False,
         "number_mode": "auto",
-        "space_between_cjk_and_latin": False,
+        "space_between_cjk_and_latin": "auto",
         "glossary": [],
         "custom_system_prompt": None,
         "cache_prompt": False,
@@ -85,6 +85,107 @@ CFG = _load_translation_config()
 TARGET_LANG = CFG["target_lang"]
 TARGET_LANG_CODE = CFG["target_lang_code"]
 SOURCE_LANG = CFG["source_lang"]
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  Language code mapping  —  bidirectional lookup for validation & auto-fill
+# ══════════════════════════════════════════════════════════════════════════════
+
+_LANG_TO_CODE = {
+    "chinese": "CN",
+    "english": "EN",
+    "japanese": "JP",
+    "korean": "KR",
+    "french": "FR",
+    "german": "DE",
+    "spanish": "ES",
+    "italian": "IT",
+    "portuguese": "PT",
+    "russian": "RU",
+    "arabic": "AR",
+    "hindi": "HI",
+    "thai": "TH",
+    "vietnamese": "VN",
+    "dutch": "NL",
+    "polish": "PL",
+    "turkish": "TR",
+    "indonesian": "ID",
+    "malay": "MS",
+    "swedish": "SV",
+    "norwegian": "NO",
+    "danish": "DA",
+    "finnish": "FI",
+    "greek": "EL",
+    "hebrew": "HE",
+    "romanian": "RO",
+    "czech": "CS",
+    "hungarian": "HU",
+    "ukrainian": "UK",
+}
+
+_CODE_TO_LANG = {v: k for k, v in _LANG_TO_CODE.items()}
+
+
+def _resolve_language_params(tgt_lang=None, tgt_code=None, src_lang=None):
+    """Resolve and validate language parameters with auto-completion.
+
+    Priority: explicit argument (CLI / function parameter) > config file > hardcoded default.
+    If only one of ``tgt_lang`` / ``tgt_code`` is given, the other is
+    auto-completed from the built-in mapping table (``_LANG_TO_CODE`` /
+    ``_CODE_TO_LANG``).
+    If both are given, they are validated for consistency.
+    If neither is given, config file defaults are used.
+
+    Returns:
+        ``(resolved_tgt_lang, resolved_tgt_code, resolved_src_lang)``.
+    """
+    resolved_src = src_lang or SOURCE_LANG
+
+    # Determine what was explicitly provided
+    tgt_from_cli = tgt_lang is not None
+    code_from_cli = tgt_code is not None
+
+    # Start with config values as baseline
+    resolved_tgt = TARGET_LANG
+    resolved_code = TARGET_LANG_CODE
+
+    # Apply explicit overrides
+    if tgt_from_cli:
+        resolved_tgt = tgt_lang
+    if code_from_cli:
+        resolved_code = tgt_code
+
+    # Validate / auto-complete the target language + code pair
+    if tgt_from_cli and code_from_cli:
+        _validate_lang_code_pair(resolved_tgt, resolved_code)
+    elif tgt_from_cli and not code_from_cli:
+        mapped = _LANG_TO_CODE.get(resolved_tgt.lower().strip())
+        if mapped:
+            resolved_code = mapped
+            print(f"  [Lang] Auto-completed -tgt_lang_code → {resolved_code}")
+    elif code_from_cli and not tgt_from_cli:
+        mapped = _CODE_TO_LANG.get(resolved_code.upper().strip())
+        if mapped:
+            resolved_tgt = mapped
+            print(f"  [Lang] Auto-completed -tgt_lang → {resolved_tgt}")
+    # else: neither → keep config defaults
+
+    return resolved_tgt, resolved_code, resolved_src
+
+
+def _validate_lang_code_pair(tgt, code):
+    """Exit with an error if *tgt* and *code* are inconsistent."""
+    expected_code = _LANG_TO_CODE.get(tgt.lower().strip())
+    expected_lang = _CODE_TO_LANG.get(code.upper().strip())
+    if expected_code and expected_code != code.upper().strip():
+        print(f"[ERR] -tgt_lang '{tgt}' maps to code '{expected_code}', "
+              f"but -tgt_lang_code '{code}' was given. "
+              f"These must be consistent.")
+        sys.exit(1)
+    if expected_lang and expected_lang != tgt.lower().strip():
+        print(f"[ERR] -tgt_lang_code '{code}' maps to language "
+              f"'{expected_lang.capitalize()}', but -tgt_lang '{tgt}' was "
+              f"given. These must be consistent.")
+        sys.exit(1)
 ADD_PUNCTUATION = CFG["add_punctuation"]
 ALLOW_FLEXIBLE_WORD_ORDER = CFG["allow_flexible_word_order"]
 ALLOW_SIMPLIFY_WORDING = CFG["allow_simplify_wording"]
@@ -353,13 +454,26 @@ def rebuild_srt(blocks, translated_texts):
 # ══════════════════════════════════════════════════════════════════════════════
 
 def _add_cjk_latin_spacing(text):
-    """Insert a space between CJK characters and Latin letters/digits."""
-    if not SPACE_BETWEEN_CJK_AND_LATIN:
+    """Insert, remove, or keep spaces between CJK characters and Latin letters/digits.
+
+    - True / "true":   insert a space between CJK and Latin characters/digits.
+    - False / "false": strip any spaces between CJK and Latin characters/digits
+                       (overrides the LLM's own spacing habits).
+    - "auto":          return the LLM output unchanged.
+    """
+    val = SPACE_BETWEEN_CJK_AND_LATIN
+    if isinstance(val, str) and val.lower() == "auto":
         return text
-    text = re.sub(r"([一-鿿])([a-zA-Z])", r"\1 \2", text)
-    text = re.sub(r"([a-zA-Z])([一-鿿])", r"\1 \2", text)
-    text = re.sub(r"([一-鿿])(\d)", r"\1 \2", text)
-    text = re.sub(r"(\d)([一-鿿])", r"\1 \2", text)
+    if val is True or (isinstance(val, str) and val.lower() == "true"):
+        text = re.sub(r"([一-鿿])([a-zA-Z])", r"\1 \2", text)
+        text = re.sub(r"([a-zA-Z])([一-鿿])", r"\1 \2", text)
+        text = re.sub(r"([一-鿿])(\d)", r"\1 \2", text)
+        text = re.sub(r"(\d)([一-鿿])", r"\1 \2", text)
+    else:
+        text = re.sub(r"([一-鿿]) ([a-zA-Z])", r"\1\2", text)
+        text = re.sub(r"([a-zA-Z]) ([一-鿿])", r"\1\2", text)
+        text = re.sub(r"([一-鿿]) (\d)", r"\1\2", text)
+        text = re.sub(r"(\d) ([一-鿿])", r"\1\2", text)
     return text
 
 
@@ -1199,6 +1313,11 @@ def translate_file(input_path,
         ``(srt_path, txt_path)`` — either may be ``None`` if the format
         doesn't produce that file type. Both ``None`` on critical failure.
     """
+    # ── Resolve language parameters (CLI > config > defaults) ──────────
+    tgt_lang, tgt_lang_code, src_lang = _resolve_language_params(
+        tgt_lang, tgt_lang_code, src_lang,
+    )
+
     # ── Read input ─────────────────────────────────────────────────────
     texts_or_blocks, is_srt = read_input(input_path)
 
@@ -1212,7 +1331,7 @@ def translate_file(input_path,
         return None, None
 
     # ── Resolve output path ────────────────────────────────────────────
-    lang_code = tgt_lang_code or TARGET_LANG_CODE
+    lang_code = tgt_lang_code
     p = Path(input_path)
     if output_stem is None:
         stem = p.stem
@@ -1267,11 +1386,11 @@ def build_parser():
     parser.add_argument("-o", "--output", default=None,
                         help="Output file path "
                              "(default: output/<input_stem>_<lang_code>.srt/.txt)")
-    parser.add_argument("-tgt-lang", default=None,
+    parser.add_argument("-tgt_lang", default=None,
                         help=f"Target language name (default: {TARGET_LANG})")
-    parser.add_argument("-tgt-lang-code", default=None,
+    parser.add_argument("-tgt_lang_code", default=None,
                         help=f"Language code for filenames (default: {TARGET_LANG_CODE})")
-    parser.add_argument("-src-lang", default=None,
+    parser.add_argument("-src_lang", default=None,
                         help=f"Source language name (default: {SOURCE_LANG})")
     parser.add_argument("-transl_backend", default="local",
                         choices=["local"] + list(BACKEND_DEFAULTS.keys()),
@@ -1310,7 +1429,7 @@ def main():
         print("Examples:")
         print(f"  python {Path(__file__).name} -i output/input.txt")
         print(f"  python {Path(__file__).name} -i output/input.txt "
-              "-tgt-lang Japanese -tgt-lang-code JP")
+              "-tgt_lang Japanese -tgt_lang_code JP")
         print(f"  python {Path(__file__).name} -i output/input.srt")
         print(f"  python {Path(__file__).name} -i output/input.txt "
               "-o D:/output/lecture_CN.srt")
@@ -1320,9 +1439,9 @@ def main():
         sys.exit(1)
 
     # ── Resolve language ──────────────────────────────────────────────
-    tgt_lang = args.tgt_lang or TARGET_LANG
-    tgt_code = args.tgt_lang_code or TARGET_LANG_CODE
-    src_lang = args.src_lang or SOURCE_LANG
+    tgt_lang, tgt_code, src_lang = _resolve_language_params(
+        args.tgt_lang, args.tgt_lang_code, args.src_lang,
+    )
 
     print("=" * 55)
     print(f"  Translate: {src_lang} → {tgt_lang} ({tgt_code})")

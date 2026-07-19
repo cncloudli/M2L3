@@ -198,7 +198,56 @@ python batch.py -translate true
 
 ## Usage
 
-### 1. `scripts/transcribe.py` — Transcription pipeline
+### 1. LLM Backend & Shared Configuration
+
+Both the **segmentation pipeline** (`scripts/transcribe.py`) and the **translation engine** (`scripts/translate.py`) share a unified LLM call layer. Available backends:
+
+| Backend | API format | Default model | Auth |
+|---------|-----------|---------------|------|
+| `local` | llama-server subprocess | `phi4` | — |
+| `deepseek` | Auto-detect: OpenAI `/chat/completions` **or** Anthropic Messages | `deepseek-v4-flash` | `openai_api_key` |
+| `openai` | OpenAI-compatible | `gpt-5.6-terra` | `openai_api_key` |
+| `qwen` | OpenAI-compatible | `qwen3.5-plus` | `openai_api_key` |
+| `gemini` | OpenAI-compatible | `gemini-3.5-flash` | `openai_api_key` |
+| `anthropic` | Anthropic Messages | `claude-opus-4-8` | `anthropic_api_key` |
+
+**API keys and custom base URL** are configured in [translate_config.json](translate_config.json):
+
+```json
+{
+    "target_lang": "Chinese",
+    "target_lang_code": "CN",
+    "source_lang": "English",
+    "add_punctuation": false,
+    "allow_flexible_word_order": false,
+    "allow_simplify_wording": false,
+    "number_mode": "auto",
+    "space_between_cjk_and_latin": "auto",
+    "glossary": ["EXAMPLE1", "EXAMPLE2", "VRAM", "CUDA"],
+    "custom_system_prompt": null,
+    "cache_prompt": false,
+    "drift_threshold": false,
+    "openai_api_key": "",
+    "anthropic_api_key": "",
+    "api_base_url": ""
+}
+```
+
+The API key fields (`openai_api_key`, `anthropic_api_key`, `api_base_url`) are **shared** — they apply to both segmentation backend and translation backend. Translation-specific fields (`target_lang`, `target_lang_code`, etc.) are detailed in [transcription_n_translation.md](docs/transcription_n_translation.md) - "3.1 Translation Configuration".
+
+Or use the `.env` file for API keys (place at project root as `.env`): **only takes effect when the corresponding key fields in `translate_config.json` are left empty**
+
+```ini
+# ── LLM backend API keys (shared by segmentation & translation) ──
+
+OPENAI_API_KEY=sk-your-key-here
+
+# Anthropic-specific (only needed when backend is anthropic)
+ANTHROPIC_API_KEY=sk-ant-your-key-here
+
+```
+
+### 2. `scripts/transcribe.py` — Transcription pipeline
 
 ```powershell
 python scripts/transcribe.py -i <input> [options]
@@ -215,7 +264,7 @@ On re-run loads a word-level JSON cache (`cache/<stem>_words.json`) to skip the 
 | `-o, --output <path>` | `output/<stem>.srt` | Output SRT file path |
 | `-gpu-layers <N>` | auto-detect | GPU layers for LLM (0 = CPU only) |
 | `-no-cache` | — | Skip word-level `.json` cache |
-| `-seg_backend <name>` | `local` | Segmentation backend (`local`, `deepseek`, `openai`, `qwen`, `gemini`, `anthropic`) |
+| `-seg_backend <name>` | `local` | Segmentation backend. See [1. LLM Backend & Shared Configuration](#1-llm-backend--shared-configuration) for available options. |
 | `-seg_model <name>` | per-backend | Model for segmentation (e.g. `phi4`, `gpt-5.6-terra`; default per backend) |
 
 #### Pipeline
@@ -265,7 +314,7 @@ python scripts/transcribe.py -i input/input.mp4 -no-cache
 
 ---
 
-### 2. `scripts/translate.py` — Language translation
+### 3. `scripts/translate.py` — Language translation
 
 Translates SRT (preserving timecodes) or plain TXT files using a **local LLM** (via llama-server) or any of **5 online API backends**.
 Auto-detects input format by content — SRT files keep their timecodes, TXT files are treated as plain text lines.
@@ -286,63 +335,15 @@ python scripts/translate.py -i <input> [options]
 |----------|---------|-------------|
 | `-i, --input <path>` | **(required)** | Input `.srt` or `.txt` file (auto-detects format by content) |
 | `-o, --output <path>` | auto | Output file path |
-| `-tgt-lang <name>` | `Chinese` | Target language name |
-| `-tgt-lang-code <code>` | `CN` | Language code for filename suffix |
-| `-src-lang <name>` | `English` | Source language name |
-| `-transl_backend <name>` | `local` | Translation backend (`local`, `deepseek`, `openai`, `qwen`, `gemini`, `anthropic`) |
-| `-transl_model <name>` | per-backend | Model for the selected backend (see table below) |
+| `-tgt_lang <name>` | `Chinese` | Target language name. Overrides `target_lang` in translate_config.json. Auto-completes `-tgt_lang_code` if omitted. |
+| `-tgt_lang_code <code>` | `CN` | Language code for filename suffix. Overrides `target_lang_code` in translate_config.json. Auto-completes `-tgt_lang` if omitted. |
+| `-src_lang <name>` | `English` | Source language name. Overrides `source_lang` in translate_config.json. |
+| `-transl_backend <name>` | `local` | Translation backend. Same options as scripts/transcribe.py. |
+| `-transl_model <name>` | per-backend | Model for the selected backend. Same options as scripts/transcribe.py. |
 | `-gpu-layers <N>` | auto-detect | GPU layers (local backend only) |
 | `-mode <name>` | `accurate` | Translation mode: `accurate` (2 lines/batch) or `flexible` (4 lines/batch, with timecodes) |
 | `-local_model <name>` | `phi4` | Local model name (applied when `-transl_backend` is `local` and no `-transl_model` given) |
 
-#### Translation backends
-
-| Backend | API format | Default model | Auth |
-|---------|-----------|---------------|------|
-| `local` | llama-server subprocess | `phi4` | — |
-| `deepseek` | Auto-detect: OpenAI `/chat/completions` **or** Anthropic Messages | `deepseek-v4-flash` | `openai_api_key` |
-| `openai` | OpenAI-compatible | `gpt-5.6-terra` | `openai_api_key` |
-| `qwen` | OpenAI-compatible | `qwen3.5-plus` | `openai_api_key` |
-| `gemini` | OpenAI-compatible | `gemini-3.5-flash` | `openai_api_key` |
-| `anthropic` | Anthropic Messages | `claude-opus-4-8` | `anthropic_api_key` |
-
-#### User configuration
-
-Edit [translate_config.json](translate_config.json) in the project root:
-
-```json
-{
-    "target_lang": "Chinese",
-    "target_lang_code": "CN",
-    "source_lang": "English",
-    "add_punctuation": false,
-    "allow_flexible_word_order": false,
-    "allow_simplify_wording": false,
-    "number_mode": "auto",
-    "space_between_cjk_and_latin": false,
-    "glossary": ["EXAMPLE1", "EXAMPLE2", "VRAM", "CUDA"],
-    "custom_system_prompt": null,
-    "cache_prompt": false,
-    "drift_threshold": false,
-    "openai_api_key": "",
-    "anthropic_api_key": "",
-    "api_base_url": ""
-}
-```
-
-For detailed explanations of each field see [transcription_n_translation.md](docs/transcription_n_translation.md) - "3.1 Translation Configuration".
-
-Or use the `.env` file for API keys (place at project root as `.env`): **only takes effect when the corresponding key fields in `translate_config.json` are left empty**
-
-```ini
-# ── Translation backend API keys (correspond to translate_config.json fields) ──
-
-OPENAI_API_KEY=sk-your-key-here
-
-# Anthropic-specific (only needed when backend is anthropic)
-ANTHROPIC_API_KEY=sk-ant-your-key-here
-
-```
 
 #### Examples
 
@@ -361,18 +362,18 @@ python scripts/translate.py -i output/input.srt -transl_backend openai -transl_m
 python scripts/translate.py -i output/input.srt -transl_backend anthropic -transl_model claude-opus-4-8
 
 # Translate to Japanese using DeepSeek (flexible mode)
-python scripts/translate.py -i output/input.txt -transl_backend deepseek -tgt-lang Japanese -tgt-lang-code JP -mode flexible
+python scripts/translate.py -i output/input.txt -transl_backend deepseek -tgt_lang Japanese -tgt_lang_code JP -mode flexible
 
 # Custom output path
 python scripts/translate.py -i output/input.txt -o D:/output/lecture_JP.srt
 
 # Override source language
-python scripts/translate.py -i output/input.txt -src-lang English -tgt-lang Chinese
+python scripts/translate.py -i output/input.txt -src_lang English -tgt_lang Chinese
 ```
 
 ---
 
-### 3. `main.py` — Orchestrator (transcribe + translate)
+### 4. `main.py` — Orchestrator (transcribe + translate)
 
 ```powershell
 python main.py -i <input> [options]
@@ -393,17 +394,17 @@ It does **not** re-implement the pipelines — it calls the same functions the s
 | Argument | Default | Description |
 |----------|---------|-------------|
 | `-i, --input <path>` | `input/input.mp4` | Input file (video/audio for transcribe, `.srt`/`.txt` for translate-only) |
-| `-o, --output <path>` | `output/<stem>.srt` | Output SRT file path |
+| `-o, --output <path>` | `output/<stem>.srt` | Same as scripts/transcribe.py |
 | `-transcribe` | `true` | Enable transcription (`true`/`false`) |
 | `-translate` | `false` | Enable translation (`true`/`false`) |
-| `-seg_backend <name>` | `local` | Segmentation backend (`local`, `deepseek`, `openai`, `qwen`, `gemini`, `anthropic`) |
-| `-seg_model <name>` | per-backend | Model for segmentation (e.g. `phi4`, `gpt-5.6-terra`) |
-| `-transl_backend <name>` | `local` | Translation backend (same options) |
-| `-transl_model <name>` | per-backend | Model for translation |
-| `-mode <name>` | `accurate` | Translation mode: `accurate` or `flexible` (only when `-translate true`) |
-| `-local_model <name>` | `phi4` | Default local model (overridable individually by `-seg_model`/`-transl_model`) |
-| `-gpu-layers <N>` | auto-detect | GPU layers for LLM (0 = CPU only) |
-| `-no-cache` | — | Skip word-level `.json` cache |
+| `-seg_backend <name>` | `local` | Same as scripts/transcribe.py |
+| `-seg_model <name>` | per-backend | Same as scripts/transcribe.py |
+| `-transl_backend <name>` | `local` | Same as scripts/translate.py |
+| `-transl_model <name>` | per-backend | Same as scripts/translate.py |
+| `-mode <name>` | `accurate` | Same as scripts/translate.py |
+| `-local_model <name>` | `phi4` | Same as scripts/translate.py |
+| `-gpu-layers <N>` | auto-detect | Same as scripts/transcribe.py |
+| `-no-cache` | — | Same as scripts/transcribe.py |
 
 > **Note:** `-mode` requires `-translate true`. Passing it without translation prints an error and exits.
 
@@ -428,7 +429,7 @@ python main.py -i input/input.mp4 -translate true -seg_backend local -seg_model 
 
 ---
 
-### 4. `batch.py` — Batch processing
+### 5. `batch.py` — Batch processing
 
 Process all files in a folder, one at a time in isolated subprocesses (each file gets its own CUDA context — no VRAM leak between files).
 
@@ -444,16 +445,16 @@ python batch.py [options]
 |----------|---------|-------------|
 | `-i, --input <dir>` | `input/` | Input folder |
 | `-o, --output <dir>` | `output/` | Output folder |
-| `-ext <ext>` | `.mp4` | File extension to search for (e.g. `.mp3`, `.wav`, `.mkv`) |
-| `-gpu-layers <N>` | auto-detect | GPU layers for LLM (0 = CPU only) |
-| `-no-cache` | — | Skip word-level cache |
-| `-transcribe` | `true` | Enable transcription (`true`/`false`) |
-| `-translate` | `false` | Translate each file after transcription (`true`/`false`) |
-| `-seg_backend <name>` | `local` | Segmentation backend (`local`, `deepseek`, `openai`, `qwen`, `gemini`, `anthropic`) |
-| `-seg_model <name>` | per-backend | Model for segmentation (default per backend) |
-| `-transl_backend <name>` | `local` | Translation backend (same options) |
-| `-transl_model <name>` | per-backend | Model for translation (default per backend) |
-| `-mode <name>` | `accurate` | Translation mode: `accurate` or `flexible` (only when `-translate true`) |
+| `-ext <ext>` | `.mp4` / `.srt` / `.txt` | File extension to search for (e.g. `.mp3`, `.wav`, `.mkv`). Defaults to `.mp4` when transcribe is on, `.srt` & `.txt` in translate-only mode. |
+| `-transcribe` | `true` | Same as main.py |
+| `-translate` | `false` | Same as main.py |
+| `-seg_backend <name>` | `local` | Same as scripts/transcribe.py |
+| `-seg_model <name>` | per-backend | Same as scripts/transcribe.py |
+| `-transl_backend <name>` | `local` | Same as scripts/translate.py |
+| `-transl_model <name>` | per-backend | Same as scripts/translate.py |
+| `-mode <name>` | `accurate` | Same as scripts/translate.py |
+| `-gpu-layers <N>` | auto-detect | Same as scripts/transcribe.py |
+| `-no-cache` | — | Same as scripts/transcribe.py |
 
 #### Examples
 

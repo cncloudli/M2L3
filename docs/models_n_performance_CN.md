@@ -50,9 +50,9 @@
 本节介绍流水线中两个 LLM 驱动任务可用的模型：
 
 - **切分** — 10 阶段 LLM 流水线，将原始转录拆分为字幕段（见 [segmentation_pipeline_CN.md](segmentation_pipeline_CN.md)）
-- **翻译** — 滑动窗口翻译引擎，翻译 SRT/TXT 文件的同时保留时间码（见 [transcription_n_translation_CN.md](transcription_n_translation_CN.md) - "翻译流水线"）
+- **翻译** — 滑动窗口翻译引擎，翻译 SRT/TXT 文件的同时保留时间码（见 [transcription_n_translation_CN.md](transcription_n_translation_CN.md) - "三、翻译流水线"）
 
-> 三个较小的非 LLM 模型——**faster-whisper-large-v3**（ASR）、**Silero VAD**（语音活动检测）和 **Wav2Vec2**（音素对齐）——在 [transcription_n_translation_CN.md](transcription_n_translation_CN.md) - "转录流水线" 中介绍。
+> 三个较小的非 LLM 模型——**faster-whisper-large-v3**（ASR）、**Silero VAD**（语音活动检测）和 **Wav2Vec2**（音素对齐）——在 [transcription_n_translation_CN.md](transcription_n_translation_CN.md) - "二、转录流水线" 中介绍。
 
 ### 2.1 本地模型
 
@@ -97,7 +97,7 @@
 **破坏率公式**: `破坏性切分数 / 总切分数`  
 *破坏性切分* 指从非语法边界处切断句子，产生主谓结构不完整的碎片或不自然的短语中断。在自然连词或从句边界处切分不计为错误。
 
-| 模型 | 用时 | 切分数 | 破坏性切分¹ |
+| 模型 | 用时 | 切分数 | 破坏性切分 |
 |------| :----: | :----: | :----------: |
 | Phi-4 14B（Q4_K_M） | 202.0s | 199 | 3（1.5%） |
 | Ministral-3-8B-Instruct 8B（Q8_0） | 195.6s | 200 | 3（1.5%） |

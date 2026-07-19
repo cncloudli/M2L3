@@ -9,7 +9,7 @@
     "allow_flexible_word_order": false,
     "allow_simplify_wording": false,
     "number_mode": "auto",
-    "space_between_cjk_and_latin": false,
+    "space_between_cjk_and_latin": "auto",
 
     "glossary": [
     ],

@@ -153,7 +153,7 @@ sub-blocks:  [B+C]        [D+E+F]
 |------|------|
 | **目的** | 对每个块调用 LLM 添加缺失标点，通过字符差异分析找出新断点 |
 | **输入** | `blocks`，`words`，短组（作为只读上下文） |
-| **子步骤** | ① 为每个块寻找最近的短组作为上下文（左/右）<br>② 调用 `_llm()` 发送到 Phi-4，请求添加缺失逗号和句末标点<br>③ `_find_new_breaks()`：对原始文本和 LLM 输出做字符级 diff，识别新增的 .?!<br>④ `_find_new_commas()`：同样 diff 找出新增的逗号<br>⑤ **保护过滤**：拒绝在脆弱尾词（FRAGILE_RE）、短语二元组、加强词 so 前的断点<br>⑥ 将新增逗号注入回单词数据 |
+| **子步骤** | ① 为每个块寻找最近的短组作为上下文（左/右）<br>② 调用 `_llm()` 发送到 LLM，请求添加缺失逗号和句末标点<br>③ `_find_new_breaks()`：对原始文本和 LLM 输出做字符级 diff，识别新增的 .?!<br>④ `_find_new_commas()`：同样 diff 找出新增的逗号<br>⑤ **保护过滤**：拒绝在脆弱尾词（FRAGILE_RE）、短语二元组、加强词 so 前的断点<br>⑥ 将新增逗号注入回单词数据 |
 | **输出** | `all_breaks`（原生 + 新增断点的全局单词索引集合） |
 | **函数** | [`_llm()`](../tools/segment.py)，[`_find_new_breaks()`](../tools/seg_diff.py)，[`_find_new_commas()`](../tools/seg_diff.py)，[`_find_context()`](../tools/segment.py) |
 
@@ -187,7 +187,7 @@ LLM 提示词（默认版）：
 |------|------|
 | **目的** | 对仍超长的段，在从句内部逗号处切分（而非列表逗号） |
 | **输入** | `segments_with_idx`（来自阶段 5），`words`，`min_words`（默认 4） |
-| **算法** | 从右到左扫描，找符合条件的逗号：<br>• 逗号两侧各 ≥ `min_words` 个词<br>• 逗号后首词是 `CLAUSE_STARTER`（代词/连词/WH词）或 `ELABORATION_STARTER`（副词/比较/限定词）<br>• 不是列表逗号（`_is_list_comma()` — 右侧有 and/or 且无从句信号）<br>• 找到最右侧符合条件的逗号 → 切分 → 递归处理两侧子段 |
+| **算法** | 从右到左扫描，找符合条件的逗号：<br>• 逗号两侧各 ≥ `min_words` 个词（逗号词本身不计入任一侧）<br>• 逗号后首词是 `CLAUSE_STARTER`（代词/连词/WH词）或 `ELABORATION_STARTER`（副词/比较/限定词）<br>• 不是列表逗号（`_is_list_comma()` — 右侧有 and/or 且无从句信号）<br>• 找到最右侧符合条件的逗号 → 切分 → 递归处理两侧子段 |
 | **输出** | 细化后的段列表 |
 | **函数** | [`_comma_split()`](../tools/seg_rules.py)，[`_is_list_comma()`](../tools/seg_rules.py) |
 

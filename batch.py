@@ -224,10 +224,18 @@ def entry():
             else:
                 out_srt = output_dir / f"{stem}.srt"
                 out_txt = output_dir / f"{stem}.txt"
+                if args.translate:
+                    out_trans_srt = output_dir / f"{stem}_CN.srt"
+                    out_trans_txt = output_dir / f"{stem}_CN.txt"
+                else:
+                    out_trans_srt = out_trans_txt = None
             srt_path = str(out_srt) if out_srt.exists() else None
             txt_path = str(out_txt) if out_txt.exists() else None
+            trans_srt_path = str(out_trans_srt) if out_trans_srt and out_trans_srt.exists() else None
+            trans_txt_path = str(out_trans_txt) if out_trans_txt and out_trans_txt.exists() else None
             if srt_path:
-                results.append({"name": stem, "srt": srt_path, "txt": txt_path})
+                results.append({"name": stem, "srt": srt_path, "txt": txt_path,
+                                "trans_srt": trans_srt_path, "trans_txt": trans_txt_path})
                 print(f"  [{stem}] done ✓")
             else:
                 print(f"  [{stem}] failed ✗: output file not generated")
@@ -242,6 +250,8 @@ def entry():
     print(f"{'='*60}")
     for r in results:
         print(f"    {r['name']}: {r['srt']}")
+        if r.get("trans_srt"):
+            print(f"      └─ translate: {r['trans_srt']}")
     print()
 
 
