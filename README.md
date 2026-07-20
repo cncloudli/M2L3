@@ -254,7 +254,7 @@ python scripts/transcribe.py -i <input> [options]
 ```
 
 Transcribes audio/video to aligned word-level timestamps via WhisperX + Wav2Vec2, then segments the words into subtitle blocks via LLM. Produces SRT + TXT.
-On re-run loads a word-level JSON cache (`cache/<stem>_words.json`) to skip the transcription + alignment step. For more details see [transcription_n_translation.md](docs/transcription_n_translation.md) - "Transcription Pipeline".
+On re-run loads a word-level JSON cache (`cache/<stem>_words.json`) to skip the transcription + alignment step. For more details see [transcription_n_translation.md](docs/transcription_n_translation.md) - "2. Transcription Pipeline".
 
 #### Arguments
 

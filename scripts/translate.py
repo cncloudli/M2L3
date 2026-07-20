@@ -986,10 +986,18 @@ def _translate_impl(texts, llm_call, tgt_lang=None, src_lang=None,
             number_mode=NUMBER_MODE,
             model=getattr(llm_call, 'model', ''),
         )
+        # Determine character descriptor for the target language
+        _lang_lower = tgt_lang.lower()
+        if "japanese" in _lang_lower:
+            _char_desc = "Japanese characters"
+        elif "korean" in _lang_lower:
+            _char_desc = "Korean characters"
+        else:
+            _char_desc = "Chinese characters"
         _cjk_system += (
             "\n\nCRITICAL: Translate ONLY the single line below. "
             "Output format: [1] <translation>. "
-            "The translation MUST contain Chinese characters."
+            f"The translation MUST contain {_char_desc}."
         )
         for idx in _cjk_miss:
             item = blocks[idx] if blocks else text_lines[idx]

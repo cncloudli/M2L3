@@ -255,7 +255,7 @@ python scripts/transcribe.py -i <输入文件> [选项]
 ```
 
 通过 WhisperX + Wav2Vec2 将音视频转写为词级对齐的时间戳，然后通过 LLM 将词切分为字幕块。输出 SRT + TXT。
-重新运行时加载词级 JSON 缓存（`cache/<stem>_words.json`），跳过转录 + 对齐的步骤。更多细节请参考 [transcription_n_translation_CN.md](docs/transcription_n_translation_CN.md) - "转录流水线"。
+重新运行时加载词级 JSON 缓存（`cache/<stem>_words.json`），跳过转录 + 对齐的步骤。更多细节请参考 [transcription_n_translation_CN.md](docs/transcription_n_translation_CN.md) - "二、转录流水线"。
 
 #### 参数
 
