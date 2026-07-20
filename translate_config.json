@@ -1,9 +1,9 @@
 {
     "_": "Edit this file to configure translation settings and API keys.  Changes take effect on the next run.  Also read by tools/llm_call.py for API key loading.",
 
+    "source_lang": "English",
     "target_lang": "Chinese",
     "target_lang_code": "CN",
-    "source_lang": "English",
 
     "add_punctuation": false,
     "allow_flexible_word_order": false,

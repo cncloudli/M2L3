@@ -1399,7 +1399,8 @@ def build_parser():
     parser.add_argument("-tgt_lang_code", default=None,
                         help=f"Language code for filenames (default: {TARGET_LANG_CODE})")
     parser.add_argument("-src_lang", default=None,
-                        help=f"Source language name (default: {SOURCE_LANG})")
+                        help=f"Source language name (default: {SOURCE_LANG}) "
+                             "(only English supported for now)")
     parser.add_argument("-transl_backend", default="local",
                         choices=["local"] + list(BACKEND_DEFAULTS.keys()),
                         help=f"Translation backend: local, {', '.join(BACKEND_DEFAULTS)} "
@@ -1413,15 +1414,12 @@ def build_parser():
     parser.add_argument("-transl_model", default=None,
                         help="Model name for the selected backend "
                              "(e.g. deepseek-v4-flash, gpt-5.6-terra, "
-                             "gemini-3.5-flash, claude-opus-4-8; "
+                             "qwen3.7-max, gemini-3.5-flash, "
+                             "claude-opus-4-8; "
                              "default: per-backend default)")
-    parser.add_argument("-local_model", default=None,
-                        help="Local model name (e.g. phi4, qwen3.5-9b, "
-                             "ministral-3-8b; default: phi4). Applied when "
-                             "-transl_backend is 'local' and no explicit "
-                             "-transl_model is given.")
     parser.add_argument("-gpu-layers", type=int, default=None,
-                        help="GPU layers (local backend only; default: auto-detect)")
+                        help="Number of local LLM layers to offload to GPU "
+                             "(default: auto-detect based on VRAM; 0 = CPU only)")
     return parser
 
 
@@ -1475,9 +1473,7 @@ def main():
 
     # ── Resolve backend ───────────────────────────────────────────────
     backend = args.transl_backend
-    model = args.transl_model
-    if backend == "local" and model is None:
-        model = args.local_model
+    model = args.transl_model or ("phi4" if backend == "local" else None)
     print(f"  Backend: {backend}  Model: {model or 'default'}")
 
     _api_cfg = load_api_config()

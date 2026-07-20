@@ -48,10 +48,10 @@ def build_parser():
     parser.add_argument("-o", "--output", default=None,
                         help="Output folder (default: output/)")
     parser.add_argument("-gpu-layers", type=int, default=None,
-                        help="Number of GPU layers for the LLM "
-                             "(default: auto-detect; 0 = CPU only)")
+                        help="Number of local LLM layers to offload to GPU "
+                             "(default: auto-detect based on VRAM; 0 = CPU only)")
     parser.add_argument("-no-cache", action="store_true",
-                        help="Skip word-level cache")
+                        help="Disable word-level caching (caching is enabled by default)")
     parser.add_argument("-ext", default=None,
                         help="File extension to process "
                              "(default: .mp4 for transcribe, .srt for translate-only)")
@@ -73,6 +73,14 @@ def build_parser():
     parser.add_argument("-seg_model", default=None,
                         help="Model name for segmentation backend "
                              "(default: per-backend default)")
+    parser.add_argument("-tgt_lang", default=None,
+                        help="Target language name (default: from translate_config.json)")
+    parser.add_argument("-tgt_lang_code", default=None,
+                        help="Language code for output filename suffix "
+                             "(e.g. JP, CN; default: from translate_config.json)")
+    parser.add_argument("-src_lang", default=None,
+                        help="Source language name (default: from translate_config.json) "
+                             "(only English supported for now)")
     parser.add_argument("-mode", default=None,
                         choices=["accurate", "flexible"],
                         help="Translation mode (from scripts/translate.py). Affects "
@@ -162,7 +170,7 @@ def entry():
 
     # ── Print summary ──────────────────────────────────────────────────
     mode_label = "Translate subtitles" if not args.transcribe else (
-        "Transcribe + translate" if args.translate else "Transcribe video")
+        "Transcribe + Translate" if args.translate else "Transcribe video")
     print(f"  Mode:          {mode_label}")
     print(f"  Input folder:  {input_dir}/")
     print(f"  Output folder: {output_dir}/")
@@ -214,6 +222,12 @@ def entry():
                 cmd += ["-transl_model", args.transl_model]
         if args.mode is not None:
             cmd += ["-mode", args.mode]
+        if args.tgt_lang is not None:
+            cmd += ["-tgt_lang", args.tgt_lang]
+        if args.tgt_lang_code is not None:
+            cmd += ["-tgt_lang_code", args.tgt_lang_code]
+        if args.src_lang is not None:
+            cmd += ["-src_lang", args.src_lang]
 
         result = subprocess.run(cmd)
 

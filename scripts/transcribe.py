@@ -269,10 +269,10 @@ def build_parser():
     parser.add_argument("-i", "--input", help="Path to input video file (default: input/input.mp4)")
     parser.add_argument("-o", "--output", help="Output SRT file path (default: ./output/<input_stem>.srt)")
     parser.add_argument("-gpu-layers", type=int, default=None,
-                        help="Number of model layers to offload to GPU "
+                        help="Number of local LLM layers to offload to GPU "
                              "(default: auto-detect based on VRAM; 0 = CPU only)")
     parser.add_argument("-no-cache", action="store_true",
-                        help="Skip word-level caching (enabled by default)")
+                        help="Disable word-level caching (caching is enabled by default)")
     parser.add_argument("-seg_backend", default="local",
                         choices=["local", "deepseek", "openai", "qwen",
                                  "gemini", "anthropic"],

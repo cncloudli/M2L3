@@ -55,16 +55,11 @@ if __name__ == "__main__":
     parser.add_argument("-translate", type=_str_to_bool, default=False,
                         help="Enable translation (default: false)")
     # model / backend args
-    parser.add_argument("-local_model", default=None,
-                        help="Local model name (e.g. phi4, qwen3.5-9b, ministral-3-8b; "
-                             "default: phi4). Applied when -seg_backend and/or "
-                             "-transl_backend are 'local' and no explicit "
-                             "-seg_model/-transl_model is given.")
     parser.add_argument("-gpu-layers", type=int, default=None,
-                        help="Number of model layers to offload to GPU "
+                        help="Number of local LLM layers to offload to GPU "
                              "(default: auto-detect based on VRAM; 0 = CPU only)")
     parser.add_argument("-no-cache", action="store_true",
-                        help="Skip word-level caching (enabled by default)")
+                        help="Disable word-level caching (caching is enabled by default)")
     parser.add_argument("-transl_backend", default="local",
                         choices=["local", "deepseek", "openai", "qwen",
                                  "gemini", "anthropic"],
@@ -80,6 +75,14 @@ if __name__ == "__main__":
                              "or flexible (4-line window, timecode-aware, "
                              "for online APIs). Only meaningful when "
                              "-translate is true. (default: accurate)")
+    parser.add_argument("-tgt_lang", default=None,
+                        help="Target language name (default: from translate_config.json)")
+    parser.add_argument("-tgt_lang_code", default=None,
+                        help="Language code for output filename suffix "
+                             "(e.g. JP, CN; default: from translate_config.json)")
+    parser.add_argument("-src_lang", default=None,
+                        help="Source language name (default: from translate_config.json) "
+                             "(only English supported for now)")
     parser.add_argument("-seg_backend", default="local",
                         choices=["local", "deepseek", "openai", "qwen",
                                  "gemini", "anthropic"],
@@ -123,12 +126,8 @@ if __name__ == "__main__":
     api_base = api_cfg.get("api_base_url", "")
 
     # ── Resolve local model ────────────────────────────────────────────────
-    seg_model = args.seg_model
-    if args.seg_backend == "local" and seg_model is None:
-        seg_model = args.local_model
-    transl_model = args.transl_model
-    if args.transl_backend == "local" and transl_model is None:
-        transl_model = args.local_model
+    seg_model = args.seg_model or ("phi4" if args.seg_backend == "local" else None)
+    transl_model = args.transl_model or ("phi4" if args.transl_backend == "local" else None)
 
     # ── Resolve translation mode ───────────────────────────────────────────
     transl_mode = args.mode or "accurate"
@@ -201,6 +200,9 @@ if __name__ == "__main__":
                 api_key=api_key, base_url=api_base,
                 gpu_layers=args.gpu_layers,
                 mode=transl_mode,
+                tgt_lang=args.tgt_lang,
+                tgt_lang_code=args.tgt_lang_code,
+                src_lang=args.src_lang,
             )
 
     # ═════════════════════════════════════════════════════════════════════════
@@ -249,6 +251,9 @@ if __name__ == "__main__":
             api_key=api_key, base_url=api_base,
             gpu_layers=args.gpu_layers,
             mode=transl_mode,
+            tgt_lang=args.tgt_lang,
+            tgt_lang_code=args.tgt_lang_code,
+            src_lang=args.src_lang,
         )
         if srt_result is None and txt_result is None:
             print("[ERR] Translation failed")

@@ -83,7 +83,7 @@ BACKEND_DEFAULTS = {
     "openai":    {"base_url": "https://api.openai.com",
                    "default_model": "gpt-5.6-terra"},
     "qwen":      {"base_url": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
-                   "default_model": "qwen3.5-plus"},
+                   "default_model": "qwen3.7-max"},
     "gemini":    {"base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
                    "default_model": "gemini-3.5-flash"},
     "anthropic": {"base_url": "https://api.anthropic.com",

@@ -208,7 +208,7 @@ python batch.py -translate true
 | `local` | llama-server 子进程 | `phi4` | — |
 | `deepseek` | 自动检测：OpenAI `/chat/completions` **或** Anthropic Messages | `deepseek-v4-flash` | `openai_api_key` |
 | `openai` | OpenAI 兼容 | `gpt-5.6-terra` | `openai_api_key` |
-| `qwen` | OpenAI 兼容 | `qwen3.5-plus` | `openai_api_key` |
+| `qwen` | OpenAI 兼容 | `qwen3.7-max` | `openai_api_key` |
 | `gemini` | OpenAI 兼容 | `gemini-3.5-flash` | `openai_api_key` |
 | `anthropic` | Anthropic Messages | `claude-opus-4-8` | `anthropic_api_key` |
 
@@ -216,9 +216,9 @@ python batch.py -translate true
 
 ```json
 {
+    "source_lang": "English",
     "target_lang": "Chinese",
     "target_lang_code": "CN",
-    "source_lang": "English",
     "add_punctuation": false,
     "allow_flexible_word_order": false,
     "allow_simplify_wording": false,
@@ -259,14 +259,14 @@ python scripts/transcribe.py -i <输入文件> [选项]
 
 #### 参数
 
-| 参数 | 默认值 | 描述 |
-|------|--------|------|
+| 参数 | 默认值 | 描述                                                  |
+|------|--------|-----------------------------------------------------|
 | `-i, --input <path>` | `input/input.mp4` | 输入视频或音频文件（.mp4/.mkv/.avi/.mov/.wav/.mp3/.m4a/.flac） |
-| `-o, --output <path>` | `output/<stem>.srt` | 输出 SRT 文件路径 |
-| `-gpu-layers <N>` | 自动检测 | LLM 使用的 GPU 层数（0 = 仅 CPU） |
-| `-no-cache` | — | 跳过词级 `.json` 缓存 |
-| `-seg_backend <name>` | `local` | 切分后端。可选项见 [1. LLM 后端与共享配置](#1-llm-后端与共享配置)。 |
-| `-seg_model <name>` | 各后端默认 | 切分用模型（如 `phi4`、`gpt-5.6-terra`；默认取决于后端） |
+| `-o, --output <path>` | `output/<stem>.srt` | 输出 SRT 文件路径                                         |
+| `-seg_backend <name>` | `local` | 切分后端。可选项见 [1. LLM 后端与共享配置](#1-llm-后端与共享配置)。         |
+| `-seg_model <name>` | 各后端默认 | 切分用模型（如 `phi4`、`gpt-5.6-terra`；默认取决于后端）             |
+| `-gpu-layers <N>` | 自动检测 | 本地 LLM 使用的 GPU 层数（0 = 仅 CPU）                        |
+| `-no-cache` | — | 禁用词级 `.json` 缓存（默认启用缓存） |
 
 #### 流水线
 
@@ -336,14 +336,13 @@ python scripts/translate.py -i <input> [选项]
 |------|--------|----------------------------------------------------------------------------------|
 | `-i, --input <path>` | **（必需）** | 输入 `.srt` 或 `.txt` 文件（按内容自动检测格式）                                                 |
 | `-o, --output <path>` | 自动 | 输出文件路径                                                                           |
+| `-transl_backend <name>` | `local` | 翻译后端。可选项同 scripts/transcribe.py。                                                 |
+| `-transl_model <name>` | 各后端默认 | 所选后端对应的模型名称，可选项同 scripts/transcribe.py。                                          |
+| `-src_lang <name>` | `English` | 源语言名称（目前只支持英语）。覆盖 translate_config.json 中的 `source_lang`。                                 |
 | `-tgt_lang <name>` | `Chinese` | 目标语言名称。覆盖 translate_config.json 中的 `target_lang`。省略时自动补全 `-tgt_lang_code`。       |
 | `-tgt_lang_code <code>` | `CN` | 用于文件名后缀的语言代码。覆盖 translate_config.json 中的 `target_lang_code`。省略时自动补全 `-tgt_lang`。 |
-| `-src_lang <name>` | `English` | 源语言名称。覆盖 translate_config.json 中的 `source_lang`。                                 |
-| `-transl_backend <name>` | `local` | 翻译后端。可选项同 scripts/transcribe.py。                                                 |
-| `-transl_model <name>` | 各后端默认 | 所选后端对应的模型名称，可选项同 scripts/transcribe.py。                                                                     |
-| `-gpu-layers <N>` | 自动检测 | GPU 层数（仅本地后端）                                                                    |
 | `-mode <name>` | `accurate` | 翻译模式：`accurate`（每次 2 行）+ `flexible`（每次 4 行，含时间码）                                 |
-| `-local_model <name>` | `phi4` | 本地模型名（`-transl_backend local` 且未指定 `-transl_model` 时生效）                          |
+| `-gpu-layers <N>` | 自动检测 | 本地 LLM 使用的 GPU 层数（0 = 仅 CPU），同 scripts/transcribe.py                                                    |
 
 
 #### 示例
@@ -392,20 +391,22 @@ python main.py -i <输入文件> [选项]
 
 #### 参数
 
-| 参数 | 默认值 | 描述 |
-|------|--------|------|
-| `-i, --input <path>` | `input/input.mp4` | 输入文件（转写：音视频；纯翻译：`.srt`/`.txt`） |
-| `-o, --output <path>` | `output/<stem>.srt` | 同 scripts/transcribe.py |
-| `-transcribe` | `true` | 启用转写（`true`/`false`） |
-| `-translate` | `false` | 启用翻译（`true`/`false`） |
-| `-seg_backend <name>` | `local` | 同 scripts/transcribe.py |
-| `-seg_model <name>` | 各后端默认 | 同 scripts/transcribe.py |
-| `-transl_backend <name>` | `local` | 同 scripts/translate.py |
-| `-transl_model <name>` | 各后端默认 | 同 scripts/translate.py |
-| `-mode <name>` | `accurate` | 同 scripts/translate.py |
-| `-local_model <name>` | `phi4` | 同 scripts/translate.py |
-| `-gpu-layers <N>` | 自动检测 | 同 scripts/transcribe.py |
-| `-no-cache` | — | 同 scripts/transcribe.py |
+| 参数 | 默认值 | 描述                                             |
+|------|--------|------------------------------------------------|
+| `-i, --input <path>` | `input/input.mp4` | 输入文件（转写：音视频；纯翻译：`.srt`/`.txt`）                 |
+| `-o, --output <path>` | `output/<stem>.srt` | 同 scripts/transcribe.py                        |
+| `-transcribe` | `true` | 启用转写（`true`/`false`）                           |
+| `-translate` | `false` | 启用翻译（`true`/`false`）                           |
+| `-seg_backend <name>` | `local` | 同 scripts/transcribe.py                        |
+| `-seg_model <name>` | 各后端默认 | 同 scripts/transcribe.py                        |
+| `-transl_backend <name>` | `local` | 同 scripts/translate.py                         |
+| `-transl_model <name>` | 各后端默认 | 同 scripts/translate.py                         |
+| `-src_lang <name>` | `English` | 同 scripts/translate.py                         |
+| `-tgt_lang <name>` | `Chinese` | 同 scripts/translate.py                         |
+| `-tgt_lang_code <code>` | `CN` | 同 scripts/translate.py                         |
+| `-mode <name>` | `accurate` | 同 scripts/translate.py                         |
+| `-gpu-layers <N>` | 自动检测 | 同 scripts/transcribe.py 和 scripts/translate.py |
+| `-no-cache` | — | 同 scripts/transcribe.py                        |
 
 > **注意：** `-mode` 要求 `-translate true`。无翻译时传入 `-mode` 会报错退出。
 
@@ -453,8 +454,11 @@ python batch.py [选项]
 | `-seg_model <name>` | 各后端默认 | 同 scripts/transcribe.py        |
 | `-transl_backend <name>` | `local` | 同 scripts/translate.py         |
 | `-transl_model <name>` | 各后端默认 | 同 scripts/translate.py         |
+| `-src_lang <name>` | `English` | 同 scripts/translate.py         |
+| `-tgt_lang <name>` | `Chinese` | 同 scripts/translate.py         |
+| `-tgt_lang_code <code>` | `CN` | 同 scripts/translate.py         |
 | `-mode <name>` | `accurate` | 同 scripts/translate.py         |
-| `-gpu-layers <N>` | 自动检测 | 同 scripts/transcribe.py        |
+| `-gpu-layers <N>` | 自动检测 | 同 scripts/transcribe.py 和 scripts/translate.py      |
 | `-no-cache` | — | 同 scripts/transcribe.py        |
 
 #### 示例

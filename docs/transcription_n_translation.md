@@ -194,8 +194,8 @@ All supported backends share a single client implementation, differing only in `
 |---------|-----------|---------------|
 | deepseek | `api.deepseek.com` | deepseek-v4-flash |
 | openai | `api.openai.com` | gpt-5.6-terra |
-| qwen | `dashscope-intl.aliyuncs.com/.../v1` | qwen3.5-plus |
-| gemini | `generativelanguage.googleapis.com/.../openai` | gemini-3.5-flash |
+| qwen | `dashscope-intl.aliyuncs.com/compatible-mode/v1` | qwen3.7-max |
+| gemini | `generativelanguage.googleapis.com/v1beta/openai` | gemini-3.5-flash |
 
 #### 1.3.2 Anthropic Backend: [`LLMCallAnthropic`](../tools/llm_call.py)
 
@@ -428,9 +428,9 @@ This saves minutes per run when debugging segmentation parameters without re-run
 
 | Field | Type | Default | Description |
 | ----- | ---- | ------- | ----------- |
+| `source_lang` | string | `"English"` | Source language name (only English supported for now; used in LLM prompts). Lower priority than CLI `-src_lang`. |
 | `target_lang` | string | `"Chinese"` | Target language name (used in LLM prompts). Lower priority than CLI `-tgt_lang`. |
 | `target_lang_code` | string | `"CN"` | Target language code (used in output filename suffix, e.g. `_CN.srt`). Lower priority than CLI `-tgt_lang_code`. |
-| `source_lang` | string | `"English"` | Source language name (used in LLM prompts). Lower priority than CLI `-src_lang`. |
 | `add_punctuation` | bool | `false` | Whether to add sentence-ending punctuation to translations. When `false`, punctuation is stripped by post-processing. |
 | `allow_flexible_word_order` | bool | `false` | Whether to allow cross-line word reordering. **Only effective in `flexible` mode** — not passed to the LLM in `accurate` mode (line-by-line locked). Strongly recommended **for online API backends only** — may cause unstable line index shifts with local models. |
 | `allow_simplify_wording` | bool | `false` | Whether to allow simplifying colloquial expressions. **Only effective in `flexible` mode** — not passed to the LLM in `accurate` mode. Strongly recommended **for online API backends only** — local models have limited ability to follow this instruction reliably. |

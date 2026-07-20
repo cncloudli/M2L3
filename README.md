@@ -207,7 +207,7 @@ Both the **segmentation pipeline** (`scripts/transcribe.py`) and the **translati
 | `local` | llama-server subprocess | `phi4` | — |
 | `deepseek` | Auto-detect: OpenAI `/chat/completions` **or** Anthropic Messages | `deepseek-v4-flash` | `openai_api_key` |
 | `openai` | OpenAI-compatible | `gpt-5.6-terra` | `openai_api_key` |
-| `qwen` | OpenAI-compatible | `qwen3.5-plus` | `openai_api_key` |
+| `qwen` | OpenAI-compatible | `qwen3.7-max` | `openai_api_key` |
 | `gemini` | OpenAI-compatible | `gemini-3.5-flash` | `openai_api_key` |
 | `anthropic` | Anthropic Messages | `claude-opus-4-8` | `anthropic_api_key` |
 
@@ -215,9 +215,9 @@ Both the **segmentation pipeline** (`scripts/transcribe.py`) and the **translati
 
 ```json
 {
+    "source_lang": "English",
     "target_lang": "Chinese",
     "target_lang_code": "CN",
-    "source_lang": "English",
     "add_punctuation": false,
     "allow_flexible_word_order": false,
     "allow_simplify_wording": false,
@@ -262,10 +262,10 @@ On re-run loads a word-level JSON cache (`cache/<stem>_words.json`) to skip the 
 |----------|---------|-------------|
 | `-i, --input <path>` | `input/input.mp4` | Input video or audio file (.mp4/.mkv/.avi/.mov/.wav/.mp3/.m4a/.flac) |
 | `-o, --output <path>` | `output/<stem>.srt` | Output SRT file path |
-| `-gpu-layers <N>` | auto-detect | GPU layers for LLM (0 = CPU only) |
-| `-no-cache` | — | Skip word-level `.json` cache |
 | `-seg_backend <name>` | `local` | Segmentation backend. See [1. LLM Backend & Shared Configuration](#1-llm-backend--shared-configuration) for available options. |
 | `-seg_model <name>` | per-backend | Model for segmentation (e.g. `phi4`, `gpt-5.6-terra`; default per backend) |
+| `-gpu-layers <N>` | auto-detect | Number of local LLM layers to offload to GPU (0 = CPU only) |
+| `-no-cache` | — | Disable word-level `.json` cache (caching is enabled by default) |
 
 #### Pipeline
 
@@ -335,14 +335,13 @@ python scripts/translate.py -i <input> [options]
 |----------|---------|-------------|
 | `-i, --input <path>` | **(required)** | Input `.srt` or `.txt` file (auto-detects format by content) |
 | `-o, --output <path>` | auto | Output file path |
-| `-tgt_lang <name>` | `Chinese` | Target language name. Overrides `target_lang` in translate_config.json. Auto-completes `-tgt_lang_code` if omitted. |
-| `-tgt_lang_code <code>` | `CN` | Language code for filename suffix. Overrides `target_lang_code` in translate_config.json. Auto-completes `-tgt_lang` if omitted. |
-| `-src_lang <name>` | `English` | Source language name. Overrides `source_lang` in translate_config.json. |
 | `-transl_backend <name>` | `local` | Translation backend. Same options as scripts/transcribe.py. |
 | `-transl_model <name>` | per-backend | Model for the selected backend. Same options as scripts/transcribe.py. |
-| `-gpu-layers <N>` | auto-detect | GPU layers (local backend only) |
+| `-src_lang <name>` | `English` | Source language name (only English supported for now). Overrides `source_lang` in translate_config.json. |
+| `-tgt_lang <name>` | `Chinese` | Target language name. Overrides `target_lang` in translate_config.json. Auto-completes `-tgt_lang_code` if omitted. |
+| `-tgt_lang_code <code>` | `CN` | Language code for filename suffix. Overrides `target_lang_code` in translate_config.json. Auto-completes `-tgt_lang` if omitted. |
 | `-mode <name>` | `accurate` | Translation mode: `accurate` (2 lines/batch) or `flexible` (4 lines/batch, with timecodes) |
-| `-local_model <name>` | `phi4` | Local model name (applied when `-transl_backend` is `local` and no `-transl_model` given) |
+| `-gpu-layers <N>` | auto-detect | Number of local LLM layers to offload to GPU (0 = CPU only). Same as scripts/transcribe.py |
 
 
 #### Examples
@@ -401,9 +400,11 @@ It does **not** re-implement the pipelines — it calls the same functions the s
 | `-seg_model <name>` | per-backend | Same as scripts/transcribe.py |
 | `-transl_backend <name>` | `local` | Same as scripts/translate.py |
 | `-transl_model <name>` | per-backend | Same as scripts/translate.py |
+| `-src_lang <name>` | `English` | Same as scripts/translate.py |
+| `-tgt_lang <name>` | `Chinese` | Same as scripts/translate.py |
+| `-tgt_lang_code <code>` | `CN` | Same as scripts/translate.py |
 | `-mode <name>` | `accurate` | Same as scripts/translate.py |
-| `-local_model <name>` | `phi4` | Same as scripts/translate.py |
-| `-gpu-layers <N>` | auto-detect | Same as scripts/transcribe.py |
+| `-gpu-layers <N>` | auto-detect | Same as scripts/transcribe.py and scripts/translate.py |
 | `-no-cache` | — | Same as scripts/transcribe.py |
 
 > **Note:** `-mode` requires `-translate true`. Passing it without translation prints an error and exits.
@@ -452,8 +453,11 @@ python batch.py [options]
 | `-seg_model <name>` | per-backend | Same as scripts/transcribe.py |
 | `-transl_backend <name>` | `local` | Same as scripts/translate.py |
 | `-transl_model <name>` | per-backend | Same as scripts/translate.py |
+| `-src_lang <name>` | `English` | Same as scripts/translate.py |
+| `-tgt_lang <name>` | `Chinese` | Same as scripts/translate.py |
+| `-tgt_lang_code <code>` | `CN` | Same as scripts/translate.py |
 | `-mode <name>` | `accurate` | Same as scripts/translate.py |
-| `-gpu-layers <N>` | auto-detect | Same as scripts/transcribe.py |
+| `-gpu-layers <N>` | auto-detect | Same as scripts/transcribe.py and scripts/translate.py |
 | `-no-cache` | — | Same as scripts/transcribe.py |
 
 #### Examples
